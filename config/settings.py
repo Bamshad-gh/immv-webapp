@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'corsheaders', # talk to front end like react
     # Your apps
     'users',
+    'cases',
 ]
 # Tell Django to use YOUR User model
 AUTH_USER_MODEL = 'users.User'
