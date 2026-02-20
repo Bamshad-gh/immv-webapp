@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Service, Category, Requirement
+from .models import Service, Category, Requirement , Case , CaseAnswer
 # Register your models here.
 
 # TabularInline = shows related model as a table INSIDE parent model's edit page
@@ -18,6 +18,7 @@ class CustomCategoryAdmin(admin.ModelAdmin):
     search_fields = ['name', 'service__name']
     # sidebar filter buttons on the right side of list page
     list_filter = ['is_active']
+    
     inlines       = [RequirementInline]  # ← move here, not in Requirement admin
 
 @admin.register(Service)  # decorator — registers User model to show in /admin panel
@@ -38,3 +39,17 @@ class CustomRequirementAdmin(admin.ModelAdmin):
     # sidebar filter buttons on the right side of list page
     list_filter = ['is_active','type']
 
+@admin.register(Case)  # decorator — registers User model to show in /admin panel
+class CustomCaseAdmin(admin.ModelAdmin):
+    # columns shown in the list page at /admin/users/user/
+    list_display = ['id', 'user', 'category', 'status', 'is_active', 'created_at']
+    # which fields the search box at top of list page searches in
+    search_fields = ['user__email', 'status']
+    # sidebar filter buttons on the right side of list page
+    list_filter = ['status']
+    
+@admin.register(CaseAnswer)
+class CustomCaseAnswerAdmin(admin.ModelAdmin):
+    list_display = ['id', 'case', 'requirement', 'answer_text', 'answer_file', 'created_at']
+    search_fields = ['case__id', 'requirement__name', 'answer_text']
+    list_filter = ['created_at']
