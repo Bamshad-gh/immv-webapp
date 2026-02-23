@@ -14,9 +14,14 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+
+
+# We will add more URL patterns here later, but for now we only have the admin panel URLs.
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('cases/', include('cases.urls')),
+    path('users/', include('users.urls'))# add this line
 ]

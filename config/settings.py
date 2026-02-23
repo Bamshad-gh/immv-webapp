@@ -46,6 +46,7 @@ INSTALLED_APPS = [
 ]
 # Tell Django to use YOUR User model
 AUTH_USER_MODEL = 'users.User'
+LOGIN_URL = '/users/login/'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

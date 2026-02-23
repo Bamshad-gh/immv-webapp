@@ -1,0 +1,38 @@
+<!DOCTYPE html>          <!-- tells browser: this is HTML5 (always first line) -->
+<html lang="en">         <!-- root of everything. lang helps screen readers -->
+
+<head>                   <!-- invisible setup — browser reads this first -->
+  <meta charset="UTF-8">
+  <!-- ↑ support all characters: Arabic, Persian, Chinese, emoji -->
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- ↑ makes page work on phones — without this mobile looks zoomed out -->
+
+  <title>login</title>
+  <!-- ↑ text in browser tab + what Google shows in search results -->
+
+
+</head>
+<body>
+  <h1>Login</h1>
+ 
+  <form method='POST'>
+    {% csrf_token %}
+    <!-- csrf_token: security token — Django REJECTS any POST form without it -->
+ 
+    {{ form.as_p }}
+    <!-- renders all form fields wrapped in <p> tags automatically -->
+    <!-- form.as_table → table layout -->
+    <!-- form.as_ul    → list layout   -->
+ 
+    <!-- Show form-wide errors -->
+    {% if form.non_field_errors %}
+      <h4 style='color:red'>{{ form.non_field_errors }}</h4>
+    {% endif %}
+ 
+    <button type='submit'>Login</button>
+  </form>
+ 
+  <p>Don't have an account? <a href="{% url 'register' %}">Register</a></p>
+</body>
+</html>

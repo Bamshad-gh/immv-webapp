@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Cases</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }
+        h1 { color: #333; }
+        .case { background: #f5f5f5; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+        .case h2 { margin: 0 0 10px; color: #444; }
+        .status { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 12px; }
+        .status.pending { background: #fff3cd; color: #856404; }
+        .status.active { background: #d4edda; color: #155724; }
+        .requirement { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 12px; margin-top: 10px; }
+        .req-type { font-size: 11px; color: #888; text-transform: uppercase; }
+    </style>
+</head>
+<body>
+    <h1>My Cases</h1>
+
+    {% if cases %}
+        {% for case in cases %}
+        <div class="case">
+            <h2>{{ case.category.name }}</h2>
+            <span class="status {{ case.status }}">{{ case.status }}</span>
+            <p>Service: {{ case.category.service.name }}</p>
+
+            <h3>Requirements:</h3>
+            {% for answer in case.answers.all %}
+            <div class="requirement">
+                <div class="req-type">{{ answer.requirement.type }}</div>
+                <strong>{{ answer.requirement.name }}</strong>
+                {% if answer.requirement.description %}
+                <p>{{ answer.requirement.description }}</p>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    {% else %}
+        <p>No cases assigned yet.</p>
+    {% endif %}
+    <a href="{% url 'logout' %}">Logout</a>
+</body>
+</html>
