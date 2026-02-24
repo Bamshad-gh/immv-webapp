@@ -22,18 +22,11 @@
         <div class="case">
             <h2>{{ case.category.name }}</h2>
             <span class="status {{ case.status }}">{{ case.status }}</span>
+            
             <p>Service: {{ case.category.service.name }}</p>
 
-            <h3>Requirements:</h3>
-            {% for answer in case.answers.all %}
-            <div class="requirement">
-                <div class="req-type">{{ answer.requirement.type }}</div>
-                <strong>{{ answer.requirement.name }}</strong>
-                {% if answer.requirement.description %}
-                <p>{{ answer.requirement.description }}</p>
-                {% endif %}
-            </div>
-            {% endfor %}
+            <a href="{% url 'case-detail' case.id %}">Fill Requirements</a>
+            
         </div>
         {% endfor %}
     {% else %}
