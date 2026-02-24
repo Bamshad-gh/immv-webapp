@@ -1,79 +1,22 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <title>My Cases</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }
-        h1 { color: #333; }
-        .case { background: #f5f5f5; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-        .case h2 { margin: 0 0 10px; color: #444; }
-        .status { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 12px; }
-        .status.pending { background: #fff3cd; color: #856404; }
-        .status.active { background: #d4edda; color: #155724; }
-        .requirement { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 12px; margin-top: 10px; }
-        .req-type { font-size: 11px; color: #888; text-transform: uppercase; }
-    </style>
-</head>
+<head><title>{{ case.category.name }} — Fill Requirements</title></head>
 <body>
-    <h1>My Cases</h1>
+  <h1>{{ case.category.name }}</h1>
+  <p>Status: {{ case.status }}</p>
 
-<form method="POST" enctype="multipart/form-data">
-    {% if messages %}
-        {% for message in messages %}
-            <p style="color: green;">{{ message }}</p>
-            {% endfor %}
-            {% endif %}
-  {# enctype='multipart/form-data' — REQUIRED for file uploads #}
-  {# without this Django receives files as empty #}
-  {% csrf_token %}
+  {% if messages %} <!-- its for message after save data -->
+    {% for message in messages %}
+      <p style="color: green;">{{ message }}</p>
+    {% endfor %}
+  {% endif %}
 
-  {% for requirement in requirements %}
-  <div class="requirement">
+  <form method="POST" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Save Answers</button>
+  </form>
 
-    {# show requirement name and type as label #}
-    <label>{{ requirement.name }}</label>
-    <span class="req-type">{{ requirement.type }}</span>
-
-    {# name="req_{{ requirement.id }}" must match key in view #}
-    {# key = f'req_{requirement.id}' in Python #}
-
-    {% if requirement.type == 'text' or requirement.type == 'question' %}
-      {# textarea — no value= attribute, content goes BETWEEN tags #}
-      {# note: no space/newline before {% if %} to avoid whitespace in prefill #}
-      <textarea name="req_{{ requirement.id }}">{% if requirement.existing_answer %}{{ requirement.existing_answer.answer_text }}{% endif %}</textarea>
-
-    {% elif requirement.type == 'number' %}
-      {# value= prefills the input if answer exists #}
-      <input type="number"
-             name="req_{{ requirement.id }}"
-             {% if requirement.existing_answer %}
-               value="{{ requirement.existing_answer.answer_number }}"
-             {% endif %}>
-
-    {% elif requirement.type == 'date' %}
-      {# date input — value must be in YYYY-MM-DD format #}
-      {# Django DateField stores in this format automatically #}
-      <input type="date"
-             name="req_{{ requirement.id }}"
-             {% if requirement.existing_answer %}
-               value="{{ requirement.existing_answer.answer_date }}"
-             {% endif %}>
-
-    {% elif requirement.type == 'document' %}
-      {# show current file if exists — user knows what's already uploaded #}
-      {% if requirement.existing_answer %}
-        <p>Current file: {{ requirement.existing_answer.answer_file }}</p>
-      {% endif %}
-      {# file input always shows — user can replace existing file #}
-      <input type="file" name="req_{{ requirement.id }}">
-
-    {% endif %}
-  </div>
-  {% endfor %}
-        
-        <button type="submit">Save Answers</button>
-        <a href="{% url 'dashboard' %}">Back to Dashboard</a>
-</form>
-
+  <a href="{% url 'dashboard' %}">Back to Dashboard</a>
 </body>
 </html>
