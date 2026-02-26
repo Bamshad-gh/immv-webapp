@@ -1,0 +1,57 @@
+
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/edit_admin_permissions.html
+EXPAND: add new permission checkboxes here as AdminProfile grows.
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Edit Permissions{% endblock %}
+{% block topbar_title %}Edit Permissions{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Edit Permissions</h1>
+    <p class="page-subtitle">{{ admin_profile.user.email }}</p>
+  </div>
+</div>
+<div class="card" style="max-width:480px;">
+  <form method="POST">
+    {% csrf_token %}
+<p style="font-size:0.8rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--slate); margin-bottom:0.75rem;">
+  Capabilities
+</p>
+
+<!-- EXPAND: add a new permission-check div for each new AdminProfile boolean -->
+<div class="permission-check">
+  <input type="checkbox" name="can_create_groups" id="can_create_groups"
+    {% if admin_profile.can_create_groups %}checked{% endif %}>
+  <label for="can_create_groups">Can create and manage groups</label>
+</div>
+<div class="permission-check">
+  <input type="checkbox" name="can_assign_members" id="can_assign_members"
+    {% if admin_profile.can_assign_members %}checked{% endif %}>
+  <label for="can_assign_members">Can assign members to groups</label>
+</div>
+<div class="permission-check">
+  <input type="checkbox" name="can_view_all_cases" id="can_view_all_cases"
+    {% if admin_profile.can_view_all_cases %}checked{% endif %}>
+  <label for="can_view_all_cases">Can view and manage all cases</label>
+</div>
+<div class="permission-check">
+  <input type="checkbox" name="can_create_users" id="can_create_users"
+    {% if admin_profile.can_create_users %}checked{% endif %}>
+  <label for="can_create_users">Can create user accounts</label>
+</div>
+<div class="permission-check">
+  <input type="checkbox" name="can_manage_roles" id="can_manage_roles"
+    {% if admin_profile.can_manage_roles %}checked{% endif %}>
+  <label for="can_manage_roles">Can manage roles and permissions</label>
+</div>
+
+<div class="divider"></div>
+<div class="flex-between">
+  <a href="{% url 'admin_panel:manage_admins' %}" class="btn btn-outline">Cancel</a>
+  <button type="submit" class="btn btn-primary">Save Permissions</button>
+</div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Add Person — {{ group.name }}{% endblock %}
+{% block content %}
+<div class="page" style="max-width:620px;">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Add Interior Person</h1>
+      <p class="page-subtitle">{{ group.name }} — this person does not need an account</p>
+    </div>
+  </div>
+  <div class="card">
+    <form method="POST" enctype="multipart/form-data">
+      {% csrf_token %}
+  <div class="form-row">
+    <div class="form-group">
+      <label>First Name</label>
+      {{ form.first_name }}
+      {{ form.first_name.errors }}
+    </div>
+    <div class="form-group">
+      <label>Last Name</label>
+      {{ form.last_name }}
+      {{ form.last_name.errors }}
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Date of Birth</label>
+      {{ form.date_of_birth }}
+      {{ form.date_of_birth.errors }}
+    </div>
+    <div class="form-group">
+      <label>Gender</label>
+      {{ form.gender }}
+      {{ form.gender.errors }}
+    </div>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Country of Birth</label>
+      {{ form.country_of_birth }}
+      {{ form.country_of_birth.errors }}
+    </div>
+    <div class="form-group">
+      <label>Passport Number</label>
+      {{ form.passport_number }}
+      {{ form.passport_number.errors }}
+    </div>
+  </div>
+
+  {# EXPAND: add more PersonalInfo fields here as needed #}
+
+  <div class="divider"></div>
+  <div class="flex-between">
+    <a href="{% url 'groups:group_detail' group.id %}" class="btn btn-outline">Cancel</a>
+    <button type="submit" class="btn btn-primary">Save Profile</button>
+  </div>
+</form>
+  </div>
+</div>
+{% endblock %}
+<!--

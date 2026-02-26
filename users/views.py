@@ -9,7 +9,7 @@ User = get_user_model()
 def login_view(request):
     # redirect if already logged in — no point showing login page
     if request.user.is_authenticated:
-        return redirect('dashboard') # dashboard is first page after login
+        return redirect('cases:dashboard') # dashboard is first page after login
 
     form = LoginForm(request.POST or None)
     # POST → form gets data → can validate
@@ -26,7 +26,7 @@ def login_view(request):
             login(request, user)    # create session
             # redirect to 'next' param if exists (from @login_required redirect)
             # otherwise go to dashboard
-            next_url = request.GET.get('next', 'dashboard')
+            next_url = request.GET.get('next', 'cases:dashboard')
             return redirect(next_url)
         else:
             form.add_error(None, 'Invalid email or password')
@@ -41,7 +41,7 @@ def logout_view(request):
 def register_view(request):
     # redirect if already logged in
     if request.user.is_authenticated:
-        return redirect('dashboard')
+        return redirect('cases:dashboard')
 
     form = RegisterForm(request.POST or None)
 
@@ -54,6 +54,6 @@ def register_view(request):
         )
         login(request, user)    # log in automatically after register
         messages.success(request, f'Welcome, {user.first_name}!')
-        return redirect('dashboard')
+        return redirect('cases:dashboard')
 
     return render(request, 'users/register.html', {'form': form})

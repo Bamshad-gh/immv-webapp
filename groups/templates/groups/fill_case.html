@@ -1,22 +1,31 @@
+<!-- ============================================================
+FILE: groups/templates/groups/fill_case.html
+Fill requirements on behalf of a managed profile (interior person).
+Reuses the same RequirementForm — same template pattern as case detail.
+EXPAND: add a sidebar showing the managed profile's info.
+============================================================ -->
 {% extends "base.html" %}
-{% block title %}{{ case.category.name }}{% endblock %}
+{% block title %}{{ case.category.name }} — {{ managed.full_name }}{% endblock %}
 {% block content %}
 <div class="page">
   <div class="page-header">
     <div>
       <h1 class="page-title">{{ case.category.name }}</h1>
       <p class="page-subtitle">
-        Case #{{ case.id }}
-        {% if case.managed_profile %}
-          · For {{ case.managed_profile.full_name }}
-        {% elif case.group %}
-          · {{ case.group.name }}
-        {% endif %}
+        Filling on behalf of
+        <strong>{{ managed.full_name }}</strong>
+        · {{ group.name }}
+        · Case #{{ case.id }}
       </p>
     </div>
     <span class="badge badge-{{ case.status }}" style="font-size:0.8rem; padding:0.4rem 0.9rem;">
       {{ case.status }}
     </span>
+  </div>
+  <!-- Person info reminder — so admin knows who they're filling for -->
+  <div style="background:var(--amber-light); border-left:3px solid var(--amber); padding:0.75rem 1rem; margin-bottom:1.5rem; font-size:0.875rem;">
+    You are filling this case for <strong>{{ managed.full_name }}</strong>,
+    managed by {{ managed.created_by.email }}.
   </div>
   <div class="card">
     <form method="POST" enctype="multipart/form-data">
@@ -39,13 +48,11 @@
   {% endif %}
 
   <div class="divider"></div>
-
   <div class="flex-between">
-    <a href="{% url 'cases:dashboard' %}" class="btn btn-outline">← Back</a>
+    <a href="{% url 'groups:group_detail' group.id %}" class="btn btn-outline">← Back to Group</a>
     <button type="submit" class="btn btn-primary">Save Answers</button>
   </div>
 </form>
   </div>
 </div>
 {% endblock %}
-<!--

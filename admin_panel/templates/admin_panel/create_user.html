@@ -1,0 +1,66 @@
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/create_user.html
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Create User{% endblock %}
+{% block topbar_title %}Create User{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Create User</h1>
+</div>
+<div class="card" style="max-width:560px;">
+  <form method="POST">
+    {% csrf_token %}
+<div class="form-row">
+  <div class="form-group">
+    <label>First Name</label>
+    {{ form.first_name }}
+    {{ form.first_name.errors }}
+  </div>
+  <div class="form-group">
+    <label>Last Name</label>
+    {{ form.last_name }}
+    {{ form.last_name.errors }}
+  </div>
+</div>
+
+<div class="form-group">
+  <label>Email</label>
+  {{ form.email }}
+  {{ form.email.errors }}
+</div>
+
+<div class="form-group">
+  <label>Phone <span style="font-weight:400; text-transform:none;">(optional)</span></label>
+  {{ form.phone }}
+  {{ form.phone.errors }}
+</div>
+
+<div class="form-row">
+  <div class="form-group">
+    <label>Password</label>
+    {{ form.password1 }}
+    {{ form.password1.errors }}
+  </div>
+  <div class="form-group">
+    <label>Confirm Password</label>
+    {{ form.password2 }}
+    {{ form.password2.errors }}
+  </div>
+</div>
+
+{% if form.non_field_errors %}
+  <div class="message message-error" style="margin-bottom:1rem;">
+    {{ form.non_field_errors }}
+  </div>
+{% endif %}
+
+<div class="divider"></div>
+<div class="flex-between">
+  <a href="{% url 'admin_panel:user_list' %}" class="btn btn-outline">Cancel</a>
+  <button type="submit" class="btn btn-primary">Create User</button>
+</div>
+  </form>
+</div>
+{% endblock %}
+<!--

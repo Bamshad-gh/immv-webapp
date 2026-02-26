@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'users',
     'cases',
     'groups',
+    'admin_panel',
 ]
 # Tell Django to use YOUR User model
 AUTH_USER_MODEL = 'users.User'
@@ -64,13 +65,14 @@ ROOT_URLCONF = 'config.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'admin_panel.context_processors.admin_context',  # add admin_profile to context for all templates
             ],
         },
     },

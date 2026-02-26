@@ -19,9 +19,28 @@ Including another URLconf
 # We will add more URL patterns here later, but for now we only have the admin panel URLs.
 from django.contrib import admin
 from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
+
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('cases/', include('cases.urls')),
-    path('users/', include('users.urls'))# add this line
-]
+# Django's built-in admin — raw DB access for superusers
+path('admin/', admin.site.urls),
+# Auth — login, logout, register
+# users/urls.py has: login/, logout/, register/
+path('users/', include('users.urls')),
+
+# Cases — user's case dashboard and detail
+# cases/urls.py has: '', <case_id>/
+path('cases/', include('cases.urls', namespace='cases')),
+
+# Groups — group dashboard and management
+# groups/urls.py has: '', create/, <group_id>/, etc.
+path('groups/', include('groups.urls', namespace='groups')),
+
+# Admin panel — completely separate from /admin/
+# admin_panel/urls.py has: login/, dashboard/, cases/, users/, etc.
+path('admin-panel/', include('admin_panel.urls', namespace='admin_panel')),
+
+# EXPAND: add new app includes here
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

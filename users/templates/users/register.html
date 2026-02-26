@@ -1,38 +1,74 @@
-<!DOCTYPE html>          <!-- tells browser: this is HTML5 (always first line) -->
-<html lang="en">         <!-- root of everything. lang helps screen readers -->
+{% extends "base.html" %}
+{% block title %}Create Account{% endblock %}
+{% block extra_css %}
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--cream); }
+  .topnav { display: none; }
+  .auth-box { width: 100%; max-width: 460px; padding: 1rem; }
+  .auth-brand { font-family: var(--font-serif); font-size: 2rem; color: var(--navy); margin-bottom: 0.25rem; }
+  .auth-brand span { color: var(--amber); }
+  .auth-tagline { color: var(--slate); font-size: 0.875rem; margin-bottom: 2rem; }
+  .auth-card { background: var(--white); border: 1px solid var(--border); padding: 2rem; }
+  .auth-card h2 { font-family: var(--font-serif); font-size: 1.3rem; font-weight: 400; margin-bottom: 1.5rem; }
+  .auth-footer { margin-top: 1.25rem; font-size: 0.875rem; color: var(--slate); text-align: center; }
+  .auth-footer a { color: var(--amber); text-decoration: none; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="auth-box">
+  <div class="auth-brand">Case<span>Flow</span></div>
+  <p class="auth-tagline">Immigration Case Management</p>
+  <div class="auth-card">
+    <h2>Create your account</h2>
+<form method="POST" novalidate>
+  {% csrf_token %}
 
-<head>                   <!-- invisible setup — browser reads this first -->
-  <meta charset="UTF-8">
-  <!-- ↑ support all characters: Arabic, Persian, Chinese, emoji -->
+  <div class="form-row">
+    <div class="form-group">
+      <label>First Name</label>
+      {{ form.first_name }}
+      {{ form.first_name.errors }}
+    </div>
+    <div class="form-group">
+      <label>Last Name</label>
+      {{ form.last_name }}
+      {{ form.last_name.errors }}
+    </div>
+  </div>
 
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- ↑ makes page work on phones — without this mobile looks zoomed out -->
+  <div class="form-group">
+    <label>Email</label>
+    {{ form.email }}
+    {{ form.email.errors }}
+  </div>
 
-  <title>login</title>
-  <!-- ↑ text in browser tab + what Google shows in search results -->
+  <div class="form-row">
+    <div class="form-group">
+      <label>Password</label>
+      {{ form.password1 }}
+      {{ form.password1.errors }}
+    </div>
+    <div class="form-group">
+      <label>Confirm Password</label>
+      {{ form.password2 }}
+      {{ form.password2.errors }}
+    </div>
+  </div>
 
+  {% if form.non_field_errors %}
+    <div class="message message-error" style="margin-bottom:1rem;">
+      {{ form.non_field_errors }}
+    </div>
+  {% endif %}
 
-</head>
-<body>
-  <h1>Register</h1>
- 
-  <form method='POST'>
-    {% csrf_token %}
-    <!-- csrf_token: security token — Django REJECTS any POST form without it -->
- 
-    {{ form.as_p}}
-    <!-- renders all form fields wrapped in <p> tags automatically -->
-    <!-- form.as_table → table layout -->
-    <!-- form.as_ul    → list layout   -->
- 
-    <!-- Show form-wide errors -->
-    {% if form.non_field_errors %}
-      <h4 style='color:red'>{{ form.non_field_errors }}</h4>
-    {% endif %}
- 
-    <button type='submit'>Register</button>
-  </form>
- 
-  
-</body>
-</html>
+  <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">
+    Create Account
+  </button>
+</form>
+  </div>
+  <p class="auth-footer">
+    Already have an account? <a href="{% url 'login' %}">Sign in</a>
+  </p>
+</div>
+{% endblock %}
+<!--

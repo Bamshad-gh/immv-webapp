@@ -1,0 +1,158 @@
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Case #{{ case.id }}{% endblock %}
+{% block topbar_title %}Case #{{ case.id }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Case #{{ case.id }}</h1>
+    <p class="page-subtitle">{{ case.category.name }} · {{ case.get_owner_display }}</p>
+  </div>
+  <span class="badge badge-{{ case.status }}" style="font-size:0.8rem; padding:0.4rem 0.9rem;">
+    {{ case.status }}
+  </span>
+</div>
+<div style="display:grid; grid-template-columns:2fr 1fr; gap:1rem; align-items:start;">
+  <!-- Left: Answers -->
+  <div>
+    <div class="card">
+      <div class="card-header">Requirements & Answers</div>
+      {% if case_requirements %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Requirement</th>
+                <th>Type</th>
+                <th>Answer</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for cr in case_requirements %}
+                {% with answer=cr.requirement.caseanswer_set.filter(case=case).first %}
+                <tr style="{% if not cr.is_active %}opacity:0.45;{% endif %}">
+                  <td>
+                    {{ cr.requirement.name }}
+                    {% if cr.is_extra %}
+                      <span class="badge badge-neutral" style="font-size:0.65rem;">extra</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-muted">{{ cr.requirement.type }}</td>
+                  <td>
+                    {% for ans in answers %}
+                      {% if ans.requirement == cr.requirement %}
+                        {% if ans.answer_file %}
+                          <a href="{{ ans.answer_file.url }}" target="_blank" class="btn btn-sm btn-outline">Download</a>
+                        {% elif ans.answer_text %}
+                          <span class="text-small">{{ ans.answer_text|truncatechars:40 }}</span>
+                        {% elif ans.answer_date %}
+                          {{ ans.answer_date }}
+                        {% elif ans.answer_number %}
+                          {{ ans.answer_number }}
+                        {% endif %}
+                      {% endif %}
+                    {% endfor %}
+                  </td>
+                  <td>
+                    {% if cr.is_active %}
+                      <span class="badge badge-active">active</span>
+                    {% else %}
+                      <span class="badge badge-rejected">removed</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-right">
+                    <!-- Toggle active/inactive -->
+                    <form method="POST" action="{% url 'admin_panel:toggle_requirement' case.id cr.id %}" style="display:inline;">
+                      {% csrf_token %}
+                      {% if cr.is_active %}
+                        <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                      {% else %}
+                        <button type="submit" class="btn btn-sm btn-success">Restore</button>
+                      {% endif %}
+                    </form>
+                  </td>
+                </tr>
+                {% endwith %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-muted">No requirements loaded for this case.</p>
+      {% endif %}
+    </div>
+<!-- Add extra requirement -->
+{% if available_to_add %}
+<div class="card" style="margin-top:1rem;">
+  <div class="card-header">Add Extra Requirement</div>
+  <form method="POST" action="{% url 'admin_panel:add_extra_requirement' case.id %}" style="display:flex; gap:0.75rem; align-items:flex-end;">
+    {% csrf_token %}
+    <div class="form-group" style="margin:0; flex:1;">
+      <label>Requirement</label>
+      <select name="requirement_id">
+        {% for req in available_to_add %}
+          <option value="{{ req.id }}">{{ req.name }} ({{ req.type }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-outline" style="margin-bottom:0;">Add</button>
+  </form>
+</div>
+{% endif %}
+  </div>
+  <!-- Right: Update status + notes -->
+  <div>
+    <div class="card">
+      <div class="card-header">Update Case</div>
+      <form method="POST">
+        {% csrf_token %}
+        <div class="form-group">
+          <label>Status</label>
+          <select name="status">
+            {% for value, label in status_choices %}
+              <option value="{{ value }}" {% if case.status == value %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Admin Notes</label>
+          <textarea name="notes" rows="4">{{ case.notes|default:'' }}</textarea>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">
+          Save Changes
+        </button>
+      </form>
+    </div>
+<div class="card" style="margin-top:1rem;">
+  <div class="card-header">Case Info</div>
+  <table style="font-size:0.85rem;">
+    <tr>
+      <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">User</td>
+      <td style="padding:0.4rem 0;">{{ case.user.email }}</td>
+    </tr>
+    {% if case.group %}
+    <tr>
+      <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Group</td>
+      <td style="padding:0.4rem 0;">{{ case.group.name }}</td>
+    </tr>
+    {% endif %}
+    {% if case.managed_profile %}
+    <tr>
+      <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">For</td>
+      <td style="padding:0.4rem 0;">{{ case.managed_profile.full_name }}</td>
+    </tr>
+    {% endif %}
+    <tr>
+      <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Created</td>
+      <td style="padding:0.4rem 0;">{{ case.created_at|date:"M d, Y" }}</td>
+    </tr>
+  </table>
+</div>
+  </div>
+</div>
+{% endblock %}
+<!--view case, update status/notes, manage requirements (add/remove).
+EXPAND: add a section showing uploaded files with download links!>

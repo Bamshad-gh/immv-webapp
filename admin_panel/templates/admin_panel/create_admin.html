@@ -1,0 +1,83 @@
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Create Admin{% endblock %}
+{% block topbar_title %}Create Admin{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Create Admin</h1>
+</div>
+<div class="card" style="max-width:560px;">
+  <form method="POST">
+    {% csrf_token %}
+<div class="form-row">
+  <div class="form-group">
+    <label>First Name</label>
+    {{ form.first_name }}
+    {{ form.first_name.errors }}
+  </div>
+  <div class="form-group">
+    <label>Last Name</label>
+    {{ form.last_name }}
+    {{ form.last_name.errors }}
+  </div>
+</div>
+
+<div class="form-group">
+  <label>Email</label>
+  {{ form.email }}
+  {{ form.email.errors }}
+</div>
+
+<div class="form-row">
+  <div class="form-group">
+    <label>Password</label>
+    {{ form.password1 }}
+    {{ form.password1.errors }}
+  </div>
+  <div class="form-group">
+    <label>Confirm Password</label>
+    {{ form.password2 }}
+    {{ form.password2.errors }}
+  </div>
+</div>
+
+<div class="divider"></div>
+<p style="font-size:0.8rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--slate); margin-bottom:0.75rem;">
+  Permissions
+</p>
+
+<!-- EXPAND: add a new permission-check div for each new AdminProfile boolean -->
+<div class="permission-check">
+  <input type="checkbox" name="can_create_groups" id="can_create_groups" {{ form.can_create_groups.value|yesno:"checked," }}>
+  <label for="can_create_groups">Can create and manage groups</label>
+</div>
+<div class="permission-check">
+  <input type="checkbox" name="can_assign_members" id="can_assign_members" {{ form.can_assign_members.value|yesno:"checked," }}>
+  <label for="can_assign_members">Can assign members to groups</label>
+</div>
+<div class="permission-check">
+  <input type="checkbox" name="can_view_all_cases" id="can_view_all_cases" {{ form.can_view_all_cases.value|yesno:"checked," }}>
+  <label for="can_view_all_cases">Can view and manage all cases</label>
+</div>
+<div class="permission-check">
+  <input type="checkbox" name="can_create_users" id="can_create_users" {{ form.can_create_users.value|yesno:"checked," }}>
+  <label for="can_create_users">Can create user accounts</label>
+</div>
+<div class="permission-check">
+  <input type="checkbox" name="can_manage_roles" id="can_manage_roles" {{ form.can_manage_roles.value|yesno:"checked," }}>
+  <label for="can_manage_roles">Can manage roles and permissions</label>
+</div>
+
+{% if form.non_field_errors %}
+  <div class="message message-error" style="margin:1rem 0;">
+    {{ form.non_field_errors }}
+  </div>
+{% endif %}
+
+<div class="divider"></div>
+<div class="flex-between">
+  <a href="{% url 'admin_panel:manage_admins' %}" class="btn btn-outline">Cancel</a>
+  <button type="submit" class="btn btn-primary">Create Admin</button>
+</div>
+  </form>
+</div>
+{% endblock %}

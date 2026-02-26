@@ -1,0 +1,208 @@
+
+
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/group_detail.html
+UPDATED — added inline role dropdown per member row.
+Replace your existing group_detail.html with this.
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}{{ group.name }}{% endblock %}
+{% block topbar_title %}Group Detail{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ group.name }}</h1>
+    <p class="page-subtitle">
+      <span class="badge badge-neutral">{{ group.type }}</span>
+      {% if group.type == "family" and group.family_info %}
+        · {{ group.family_info.family_name }}
+      {% elif group.type == "business" and group.business_info %}
+        · {{ group.business_info.company_name }}
+      {% endif %}
+      · Created {{ group.created_at|date:"M d, Y" }}
+    </p>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns:2fr 1fr; gap:1rem; align-items:start;">
+
+  <!-- Left — Members table -->
+  <div>
+    <div class="card">
+      <div class="card-header flex-between">
+        <span>Members</span>
+        <span class="text-muted text-small">
+          {{ memberships|length }} member{{ memberships|length|pluralize }}
+        </span>
+      </div>
+
+      {% if memberships %}
+        {% for m in memberships %}
+          <div style="padding:1rem 0; border-bottom:1px solid var(--border);">
+
+            <!-- Member header row -->
+            <div class="flex-between" style="margin-bottom:0.75rem;">
+              <div class="flex-center">
+                <a href="{% url 'admin_panel:admin_view_user' m.user.id %}"
+                   style="font-weight:500; color:var(--amber); text-decoration:none;">
+                  {{ m.user.email }}
+                </a>
+                {% if not m.is_active %}
+                  <span class="badge badge-rejected">suspended</span>
+                {% endif %}
+              </div>
+
+              <!-- Suspend / Restore -->
+              <form method="POST"
+                    action="{% url 'admin_panel:admin_toggle_member' group.id m.id %}"
+                    style="display:inline;">
+                {% csrf_token %}
+                {% if m.is_active %}
+                  <button type="submit" class="btn btn-sm btn-danger">Suspend</button>
+                {% else %}
+                  <button type="submit" class="btn btn-sm btn-success">Restore</button>
+                {% endif %}
+              </form>
+            </div>
+
+            <!-- Inline role change dropdown -->
+            <form method="POST"
+                  action="{% url 'admin_panel:admin_change_member_role' group.id m.id %}"
+                  style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.75rem;">
+              {% csrf_token %}
+              <label style="font-size:0.75rem; font-weight:600; letter-spacing:0.04em;
+                             text-transform:uppercase; color:var(--slate); white-space:nowrap; margin:0;">
+                Role
+              </label>
+              <select name="role_id" style="flex:1; padding:0.35rem 0.6rem; font-size:0.85rem;">
+                <option value="">No role</option>
+                {% for role in roles %}
+                  <option value="{{ role.id }}"
+                    {% if m.role and m.role.id == role.id %}selected{% endif %}>
+                    {{ role.name }}
+                  </option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-sm btn-outline">Set</button>
+            </form>
+
+            <!-- Permission checkboxes -->
+            <form method="POST"
+                  action="{% url 'admin_panel:admin_set_member_permissions' group.id m.id %}"
+                  style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+              {% csrf_token %}
+              {% for perm in all_permissions %}
+                <label style="display:flex; align-items:center; gap:0.35rem;
+                               font-size:0.8rem; text-transform:none;
+                               letter-spacing:0; font-weight:400;
+                               color:var(--navy); cursor:pointer;">
+                  <input type="checkbox"
+                         name="permissions"
+                         value="{{ perm.id }}"
+                         style="width:auto;"
+                         {% if perm in m.permissions.all %}checked{% endif %}>
+                  {{ perm.name }}
+                </label>
+              {% endfor %}
+              <button type="submit" class="btn btn-sm btn-outline">Save Permissions</button>
+            </form>
+
+            <p class="text-muted text-small mt-1">
+              Joined {{ m.joined_at|date:"M d, Y" }}
+            </p>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state" style="padding:2rem 1rem;">
+          <p class="empty-state-title">No members yet</p>
+          <p class="text-muted">Add a member using the form on the right.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Right column -->
+  <div>
+
+    <!-- Add Member -->
+    <div class="card">
+      <div class="card-header">Add Member</div>
+      <form method="POST" action="{% url 'admin_panel:admin_add_member' group.id %}">
+        {% csrf_token %}
+        <div class="form-group">
+          <label>User Email</label>
+          <input type="email" name="email" placeholder="user@email.com" required>
+        </div>
+        <div class="form-group">
+          <label>Role <span style="font-weight:400; text-transform:none;">(optional)</span></label>
+          <select name="role">
+            <option value="">No role</option>
+            {% for role in roles %}
+              <option value="{{ role.id }}">{{ role.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary"
+                style="width:100%; justify-content:center;">
+          Add Member
+        </button>
+      </form>
+    </div>
+
+    <!-- Group Info -->
+    <div class="card" style="margin-top:1rem;">
+      <div class="card-header">Group Info</div>
+      <table style="font-size:0.85rem;">
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0; white-space:nowrap;">Owner</td>
+          <td style="padding:0.4rem 0;">
+            <a href="{% url 'admin_panel:admin_view_user' group.created_by.id %}"
+               style="color:var(--amber); text-decoration:none;">
+              {{ group.created_by.email|default:"—" }}
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Type</td>
+          <td style="padding:0.4rem 0;">{{ group.get_type_display }}</td>
+        </tr>
+        {% if group.type == "family" and group.family_info %}
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Family</td>
+          <td style="padding:0.4rem 0;">{{ group.family_info.family_name }}</td>
+        </tr>
+        {% endif %}
+        {% if group.type == "business" and group.business_info %}
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Company</td>
+          <td style="padding:0.4rem 0;">{{ group.business_info.company_name }}</td>
+        </tr>
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Reg. No.</td>
+          <td style="padding:0.4rem 0;">{{ group.business_info.business_number }}</td>
+        </tr>
+        {% endif %}
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Created</td>
+          <td style="padding:0.4rem 0;">{{ group.created_at|date:"M d, Y" }}</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Managed Profiles -->
+    {% if managed_profiles %}
+    <div class="card" style="margin-top:1rem;">
+      <div class="card-header">Interior Persons</div>
+      {% for profile in managed_profiles %}
+        <div style="padding:0.6rem 0; border-bottom:1px solid var(--border);">
+          <div style="font-weight:500; font-size:0.9rem;">{{ profile.full_name }}</div>
+          <div class="text-muted text-small">by {{ profile.created_by.email }}</div>
+        </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}

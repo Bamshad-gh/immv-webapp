@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Add Member — {{ group.name }}{% endblock %}
+{% block content %}
+<div class="page" style="max-width:520px;">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Add Member</h1>
+      <p class="page-subtitle">{{ group.name }}</p>
+    </div>
+  </div>
+  <div class="card">
+    <form method="POST">
+      {% csrf_token %}
+  <div class="form-group">
+    <label>User Email</label>
+    {{ form.email }}
+    {{ form.email.errors }}
+    <p class="text-muted text-small mt-1">The person must already have an account.</p>
+  </div>
+
+  <div class="form-group">
+    <label>Role <span style="font-weight:400; text-transform:none;">(optional)</span></label>
+    {{ form.role }}
+    {{ form.role.errors }}
+  </div>
+
+  {% if form.non_field_errors %}
+    <div class="message message-error" style="margin-bottom:1rem;">
+      {{ form.non_field_errors }}
+    </div>
+  {% endif %}
+
+  <div class="divider"></div>
+  <div class="flex-between">
+    <a href="{% url 'groups:group_detail' group.id %}" class="btn btn-outline">Cancel</a>
+    <button type="submit" class="btn btn-primary">Add Member</button>
+  </div>
+</form>
+  </div>
+</div>
+{% endblock %}
+<!--

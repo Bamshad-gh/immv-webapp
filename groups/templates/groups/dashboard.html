@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}My Groups{% endblock %}
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">My Groups</h1>
+      <p class="page-subtitle">Manage your family, business, and other group cases</p>
+    </div>
+    <a href="{% url 'groups:group_create' %}" class="btn btn-primary">+ New Group</a>
+  </div>
+{% if memberships %}
+<div class="grid-3">
+{% for membership in memberships %}
+<div class="card" style="position:relative;">
+<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:0.75rem;">
+<span class="badge badge-neutral">{{ membership.group.type }}</span>
+{% if membership.role %}
+<span class="text-muted text-small">{{ membership.role.name }}</span>
+{% endif %}
+</div>
+<h3 style="font-family:var(--font-serif); font-size:1.15rem; font-weight:400; margin-bottom:0.4rem;">
+{{ membership.group.name }}
+</h3>
+<p class="text-muted text-small">
+{{ membership.group.memberships.count }} member{{ membership.group.memberships.count|pluralize }}
+</p>
+<div class="divider"></div>
+<a href="{% url 'groups:group_detail' membership.group.id %}" class="btn btn-outline btn-sm" style="width:100%; justify-content:center;">
+View Group
+</a>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<div class="card">
+<div class="empty-state">
+<p class="empty-state-title">No groups yet</p>
+<p class="text-muted">Create a group to manage cases for your family or business.</p>
+<div style="margin-top:1.25rem;">
+<a href="{% url 'groups:group_create' %}" class="btn btn-primary">Create a Group</a>
+</div>
+</div>
+</div>
+{% endif %}
+</div>
+{% endblock %}
+<!--

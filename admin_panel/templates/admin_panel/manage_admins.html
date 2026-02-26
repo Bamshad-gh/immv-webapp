@@ -1,0 +1,61 @@
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/manage_admins.html
+Superadmin only — lists all admins and their permissions.
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Manage Admins{% endblock %}
+{% block topbar_title %}Manage Admins{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Admins</h1>
+    <p class="page-subtitle">Staff accounts and their capabilities</p>
+  </div>
+  <a href="{% url 'admin_panel:create_admin' %}" class="btn btn-primary">+ Create Admin</a>
+</div>
+<div class="card">
+  {% if admins %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Permissions</th>
+            <th>Created by</th>
+            <th>Created</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for admin in admins %}
+            <tr>
+              <td>{{ admin.user.email }}</td>
+              <td>
+                <div style="display:flex; gap:0.3rem; flex-wrap:wrap;">
+                  {% if admin.can_create_groups  %}<span class="badge badge-neutral">groups</span>{% endif %}
+                  {% if admin.can_assign_members %}<span class="badge badge-neutral">members</span>{% endif %}
+                  {% if admin.can_view_all_cases %}<span class="badge badge-neutral">cases</span>{% endif %}
+                  {% if admin.can_create_users   %}<span class="badge badge-neutral">users</span>{% endif %}
+                  {% if admin.can_manage_roles   %}<span class="badge badge-neutral">roles</span>{% endif %}
+                </div>
+              </td>
+              <td class="text-muted">{{ admin.created_by.email|default:"—" }}</td>
+              <td class="text-muted">{{ admin.created_at|date:"M d, Y" }}</td>
+              <td class="text-right">
+                <a href="{% url 'admin_panel:edit_admin_permissions' admin.id %}" class="btn btn-sm btn-outline">
+                  Edit Permissions
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <p class="empty-state-title">No admins yet</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+<!--

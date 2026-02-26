@@ -1,37 +1,120 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>My Cases</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; }
-        h1 { color: #333; }
-        .case { background: #f5f5f5; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-        .case h2 { margin: 0 0 10px; color: #444; }
-        .status { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 12px; }
-        .status.pending { background: #fff3cd; color: #856404; }
-        .status.active { background: #d4edda; color: #155724; }
-        .requirement { background: white; border: 1px solid #ddd; border-radius: 6px; padding: 12px; margin-top: 10px; }
-        .req-type { font-size: 11px; color: #888; text-transform: uppercase; }
-    </style>
-</head>
-<body>
-    <h1>My Cases</h1>
-
-    {% if cases %}
-        {% for case in cases %}
-        <div class="case">
-            <h2>{{ case.category.name }}</h2>
-            <span class="status {{ case.status }}">{{ case.status }}</span>
-            
-            <p>Service: {{ case.category.service.name }}</p>
-
-            <a href="{% url 'case-detail' case.id %}">Fill Requirements</a>
-            
-        </div>
-        {% endfor %}
+{% extends "base.html" %}
+{% block title %}My Cases{% endblock %}
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">My Cases</h1>
+      <p class="page-subtitle">Track and fill your immigration case requirements</p>
+    </div>
+  </div>
+  <!-- Personal Cases -->
+  <div class="card mb-2">
+    <div class="card-header">Personal Cases</div>
+    {% if personal_cases %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Case #</th>
+              <th>Category</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for case in personal_cases %}
+              <tr>
+                <td>#{{ case.id }}</td>
+                <td>{{ case.category.name }}</td>
+                <td><span class="badge badge-{{ case.status }}">{{ case.status }}</span></td>
+                <td class="text-muted">{{ case.created_at|date:"M d, Y" }}</td>
+                <td class="text-right">
+                  <a href="{% url 'cases:case-detail' case.id %}" class="btn btn-sm btn-outline">
+                    Fill Requirements
+                  </a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     {% else %}
-        <p>No cases assigned yet.</p>
+      <div class="empty-state">
+        <p class="empty-state-title">No personal cases yet</p>
+        <p class="text-muted">Cases assigned to you by an admin will appear here.</p>
+      </div>
     {% endif %}
-    <a href="{% url 'logout' %}">Logout</a>
-</body>
-</html>
+  </div>
+  <!-- Group Cases -->
+{% if group_cases %}
+  <div class="card mb-2" style="margin-top:1rem;">
+    <div class="card-header">Group Cases</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Case #</th>
+            <th>Group</th>
+            <th>Category</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for case in group_cases %}
+            <tr>
+              <td>#{{ case.id }}</td>
+              <td>{{ case.group.name }}</td>
+              <td>{{ case.category.name }}</td>
+              <td><span class="badge badge-{{ case.status }}">{{ case.status }}</span></td>
+              <td class="text-right">
+                <a href="{% url 'cases:case-detail' case.id %}" class="btn btn-sm btn-outline">
+                  Fill Requirements
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+  <!-- Managed Profile Cases -->
+{% if managed_cases %}
+  <div class="card" style="margin-top:1rem;">
+    <div class="card-header">Cases I Manage</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Case #</th>
+            <th>For</th>
+            <th>Category</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for case in managed_cases %}
+            <tr>
+              <td>#{{ case.id }}</td>
+              <td>{{ case.managed_profile.full_name }}</td>
+              <td>{{ case.category.name }}</td>
+              <td><span class="badge badge-{{ case.status }}">{{ case.status }}</span></td>
+              <td class="text-right">
+                <a href="{% url 'cases:case-detail' case.id %}" class="btn btn-sm btn-outline">
+                  Fill Requirements
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+<!--

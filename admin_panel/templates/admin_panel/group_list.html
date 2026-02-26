@@ -1,0 +1,64 @@
+
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/group_list.html
+Lists all groups. Admin can create a new group from here.
+EXPAND: add search/filter by group type.
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Groups{% endblock %}
+{% block topbar_title %}All Groups{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Groups</h1>
+    <p class="page-subtitle">{{ groups|length }} active group{{ groups|length|pluralize }}</p>
+  </div>
+  <a href="{% url 'admin_panel:admin_create_group' %}" class="btn btn-primary">+ Create Group</a>
+</div>
+
+<div class="card">
+  {% if groups %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Owner</th>
+            <th>Members</th>
+            <th>Created</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for group in groups %}
+            <tr>
+              <td>{{ group.name }}</td>
+              <td><span class="badge badge-neutral">{{ group.type }}</span></td>
+              <td class="text-muted">{{ group.created_by.email|default:"—" }}</td>
+              <td>{{ group.memberships.count }}</td>
+              <td class="text-muted">{{ group.created_at|date:"M d, Y" }}</td>
+              <td class="text-right">
+                <a href="{% url 'admin_panel:group_detail' group.id %}" class="btn btn-sm btn-outline">
+                  Manage
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <p class="empty-state-title">No groups yet</p>
+      <p class="text-muted">Create a group and assign an owner to get started.</p>
+      <div style="margin-top:1.25rem;">
+        <a href="{% url 'admin_panel:admin_create_group' %}" class="btn btn-primary">
+          + Create First Group
+        </a>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

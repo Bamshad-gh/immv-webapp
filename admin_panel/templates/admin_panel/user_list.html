@@ -1,0 +1,54 @@
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Users{% endblock %}
+{% block topbar_title %}All Users{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Users</h1>
+    <p class="page-subtitle">{{ users|length }} registered user{{ users|length|pluralize }}</p>
+  </div>
+  <a href="{% url 'admin_panel:create_user' %}" class="btn btn-primary">+ Create User</a>
+</div>
+<div class="card">
+  {% if users %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Name</th>
+            <th>Joined</th>
+            <th>Active</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+            <tr>
+              <td>
+                 <a href="{% url 'admin_panel:admin_view_user' user.id %}"
+                     style="color:var(--amber); text-decoration:none;">
+                    {{ user.email }}
+                </a>
+             </td>
+              <td>{{ user.first_name }} {{ user.last_name }}</td>
+              <td class="text-muted">{{ user.date_joined|date:"M d, Y" }}</td>
+              <td>
+                {% if user.is_active %}
+                  <span class="badge badge-active">yes</span>
+                {% else %}
+                  <span class="badge badge-rejected">no</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <p class="empty-state-title">No users yet</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+<!--

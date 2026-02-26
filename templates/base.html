@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}CaseFlow{% endblock %}</title>
+  <!-- Google Fonts — swap these to retheme typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* ── CSS Variables — change here to retheme everything ── */
+    :root {
+      --navy:   #0f1923;
+      --cream:  #f7f5f0;
+      --amber:  #c8820a;
+      --amber-light: #f5e6c8;
+      --slate:  #4a5568;
+      --border: #e2ddd6;
+      --white:  #ffffff;
+      --danger: #c0392b;
+      --success:#2e7d52;
+      --font-serif: 'Instrument Serif', Georgia, serif;
+      --font-sans:  'DM Sans', system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--cream);
+      color: var(--navy);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    /* ── Top Navigation ── */
+    .topnav {
+      background: var(--navy);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2rem;
+      height: 58px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .topnav-brand {
+      font-family: var(--font-serif);
+      font-size: 1.3rem;
+      color: var(--white);
+      text-decoration: none;
+      letter-spacing: 0.02em;
+    }
+
+    .topnav-brand span {
+      color: var(--amber);
+    }
+
+    .topnav-links {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      list-style: none;
+    }
+
+    .topnav-links a {
+      color: rgba(255,255,255,0.7);
+      text-decoration: none;
+      padding: 0.4rem 0.9rem;
+      border-radius: 4px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+
+    .topnav-links a:hover {
+      color: var(--white);
+      background: rgba(255,255,255,0.08);
+    }
+
+    .topnav-links a.active {
+      color: var(--amber);
+    }
+
+    .topnav-user {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: rgba(255,255,255,0.7);
+      font-size: 0.875rem;
+    }
+
+    .topnav-user a {
+      color: rgba(255,255,255,0.5);
+      text-decoration: none;
+      font-size: 0.8rem;
+      padding: 0.3rem 0.7rem;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+
+    .topnav-user a:hover {
+      color: var(--white);
+      border-color: rgba(255,255,255,0.3);
+    }
+
+    /* ── Page Layout ── */
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2.5rem 2rem;
+    }
+
+    .page-header {
+      margin-bottom: 2rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .page-title {
+      font-family: var(--font-serif);
+      font-size: 1.75rem;
+      font-weight: 400;
+      color: var(--navy);
+    }
+
+    .page-subtitle {
+      color: var(--slate);
+      font-size: 0.875rem;
+      margin-top: 0.25rem;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      padding: 1.5rem;
+    }
+
+    .card + .card {
+      margin-top: 1rem;
+    }
+
+    .card-header {
+      font-family: var(--font-serif);
+      font-size: 1.1rem;
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ── Grid ── */
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 1rem;
+    }
+
+    /* ── Tables ── */
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+
+    thead th {
+      text-align: left;
+      padding: 0.6rem 1rem;
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--slate);
+      background: var(--cream);
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--navy);
+    }
+
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #faf9f6; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 1.1rem;
+      font-family: var(--font-sans);
+      font-size: 0.875rem;
+      font-weight: 500;
+      border: 1px solid transparent;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--amber);
+      color: var(--white);
+      border-color: var(--amber);
+    }
+
+    .btn-primary:hover {
+      background: #b5720a;
+      border-color: #b5720a;
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--navy);
+      border-color: var(--border);
+    }
+
+    .btn-outline:hover {
+      border-color: var(--navy);
+      background: var(--cream);
+    }
+
+    .btn-danger {
+      background: transparent;
+      color: var(--danger);
+      border-color: #e8c5c3;
+    }
+
+    .btn-danger:hover {
+      background: #fdf0ef;
+    }
+
+    .btn-sm {
+      padding: 0.3rem 0.75rem;
+      font-size: 0.8rem;
+    }
+
+    /* ── Forms ── */
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--slate);
+      margin-bottom: 0.4rem;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="date"],
+    input[type="number"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 0.6rem 0.875rem;
+      font-family: var(--font-sans);
+      font-size: 0.9rem;
+      color: var(--navy);
+      background: var(--white);
+      border: 1px solid var(--border);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--amber);
+    }
+
+    textarea { resize: vertical; min-height: 80px; }
+
+    .errorlist {
+      list-style: none;
+      margin-top: 0.3rem;
+    }
+
+    .errorlist li {
+      font-size: 0.8rem;
+      color: var(--danger);
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    /* ── Messages ── */
+    .messages { margin-bottom: 1.5rem; }
+
+    .message {
+      padding: 0.75rem 1rem;
+      font-size: 0.875rem;
+      border-left: 3px solid;
+    }
+
+    .message-success {
+      background: #f0faf4;
+      border-color: var(--success);
+      color: var(--success);
+    }
+
+    .message-error {
+      background: #fdf0ef;
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .message-info {
+      background: var(--amber-light);
+      border-color: var(--amber);
+      color: #7a4f06;
+    }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .badge-pending   { background: #fef3c7; color: #92400e; }
+    .badge-active    { background: #d1fae5; color: #065f46; }
+    .badge-completed { background: #dbeafe; color: #1e40af; }
+    .badge-rejected  { background: #fee2e2; color: #991b1b; }
+    .badge-neutral   { background: var(--cream); color: var(--slate); border: 1px solid var(--border); }
+
+    /* ── Empty state ── */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--slate);
+    }
+
+    .empty-state-title {
+      font-family: var(--font-serif);
+      font-size: 1.2rem;
+      margin-bottom: 0.5rem;
+      color: var(--navy);
+    }
+
+    /* ── Divider ── */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 1.5rem 0;
+    }
+
+    /* ── Utility ── */
+    .text-muted   { color: var(--slate); font-size: 0.875rem; }
+    .text-small   { font-size: 0.8rem; }
+    .text-right   { text-align: right; }
+    .flex         { display: flex; }
+    .flex-between { display: flex; justify-content: space-between; align-items: center; }
+    .flex-center  { display: flex; align-items: center; }
+    .gap-sm       { gap: 0.5rem; }
+    .gap-md       { gap: 1rem; }
+    .mt-1         { margin-top: 0.5rem; }
+    .mt-2         { margin-top: 1rem; }
+    .mt-3         { margin-top: 1.5rem; }
+    .mb-1         { margin-bottom: 0.5rem; }
+    .mb-2         { margin-bottom: 1rem; }
+  </style>
+{% block extra_css %}{% endblock %}
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="topnav">
+    <a href="{% url 'cases:dashboard' %}" class="topnav-brand">
+      Case<span>Flow</span>
+    </a>
+    <ul class="topnav-links">
+      {% if request.user.is_authenticated %}
+        <li><a href="{% url 'cases:dashboard' %}">My Cases</a></li>
+        <li><a href="{% url 'groups:group_dashboard' %}">Groups</a></li>
+        {# EXPAND: add more nav links here #}
+      {% endif %}
+    </ul>
+    <div class="topnav-user">
+      {% if request.user.is_authenticated %}
+        <span>{{ request.user.email }}</span>
+        <a href="{% url 'logout' %}">Sign out</a>
+      {% else %}
+        <a href="{% url 'login' %}">Sign in</a>
+      {% endif %}
+    </div>
+  </nav>
+  <!-- Flash messages -->
+{% if messages %}
+<div style="max-width:1100px; margin: 1rem auto; padding: 0 2rem;">
+<div class="messages">
+{% for message in messages %}
+<div class="message message-{{ message.tags }}">{{ message }}</div>
+{% endfor %}
+</div>
+</div>
+{% endif %}
+  <!-- Page content -->
+{% block content %}{% endblock %}
+{% block extra_js %}{% endblock %}
+</body>
+</html>
+<!--

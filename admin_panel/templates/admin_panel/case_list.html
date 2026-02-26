@@ -1,0 +1,79 @@
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/case_list.html
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Cases{% endblock %}
+{% block topbar_title %}All Cases{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Cases</h1>
+    <p class="page-subtitle">{{ cases|length }} case{{ cases|length|pluralize }} found</p>
+  </div>
+  <a href="{% url 'admin_panel:create_case' %}" class="btn btn-primary">+ Create Case</a>
+</div>
+<!-- Filters -->
+<div class="card" style="margin-bottom:1rem;">
+  <form method="GET" style="display:flex; gap:1rem; align-items:flex-end; flex-wrap:wrap;">
+    <div class="form-group" style="margin:0; flex:1; min-width:180px;">
+      <label>Filter by Status</label>
+      <select name="status">
+        <option value="">All statuses</option>
+        {% for value, label in status_choices %}
+          <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin:0; flex:2; min-width:220px;">
+      <label>Filter by User Email</label>
+      <input type="text" name="user" value="{{ user_filter|default:'' }}" placeholder="user@email.com">
+    </div>
+    <button type="submit" class="btn btn-outline" style="margin-bottom:0;">Filter</button>
+    {% if status_filter or user_filter %}
+      <a href="{% url 'admin_panel:case_list' %}" class="btn btn-outline" style="margin-bottom:0;">Clear</a>
+    {% endif %}
+  </form>
+</div>
+<div class="card">
+  {% if cases %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Case #</th>
+            <th>User</th>
+            <th>Category</th>
+            <th>For</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for case in cases %}
+            <tr>
+              <td>#{{ case.id }}</td>
+              <td>{{ case.user.email }}</td>
+              <td>{{ case.category.name }}</td>
+              <td class="text-muted">{{ case.get_owner_display }}</td>
+              <td><span class="badge badge-{{ case.status }}">{{ case.status }}</span></td>
+              <td class="text-muted">{{ case.created_at|date:"M d, Y" }}</td>
+              <td class="text-right">
+                <a href="{% url 'admin_panel:case_detail' case.id %}" class="btn btn-sm btn-outline">
+                  View
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <p class="empty-state-title">No cases found</p>
+      <p class="text-muted">Try adjusting your filters.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+<!--

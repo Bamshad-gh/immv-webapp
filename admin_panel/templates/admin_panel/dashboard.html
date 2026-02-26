@@ -1,0 +1,58 @@
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block topbar_title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Dashboard</h1>
+    <p class="page-subtitle">Welcome back, {{ request.user.first_name }}</p>
+  </div>
+</div>
+{% if stats %}
+<div class="stat-grid">
+  {% if stats.total_cases is not None %}
+    <div class="stat-card accent">
+      <div class="stat-number">{{ stats.total_cases }}</div>
+      <div class="stat-label">Total Cases</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ stats.pending_cases }}</div>
+      <div class="stat-label">Pending</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">{{ stats.completed_cases }}</div>
+      <div class="stat-label">Completed</div>
+    </div>
+  {% endif %}
+  {% if stats.total_groups is not None %}
+    <div class="stat-card">
+      <div class="stat-number">{{ stats.total_groups }}</div>
+      <div class="stat-label">Active Groups</div>
+    </div>
+  {% endif %}
+  {% if stats.total_users is not None %}
+    <div class="stat-card">
+      <div class="stat-number">{{ stats.total_users }}</div>
+      <div class="stat-label">Users</div>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+<!-- Quick actions -->
+<div class="card">
+  <div class="card-header">Quick Actions</div>
+  <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+    {% if request.user.admin_profile.can_view_all_cases %}
+      <a href="{% url 'admin_panel:create_case' %}" class="btn btn-primary">+ Create Case</a>
+      <a href="{% url 'admin_panel:case_list' %}" class="btn btn-outline">View All Cases</a>
+    {% endif %}
+    {% if request.user.admin_profile.can_create_users %}
+      <a href="{% url 'admin_panel:create_user' %}" class="btn btn-outline">+ Create User</a>
+    {% endif %}
+    {% if request.user.admin_profile.can_create_groups %}
+      <a href="{% url 'admin_panel:group_list' %}" class="btn btn-outline">View Groups</a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{#EXPAND: add more stat blocks as new admin capabilities are added , For example, if you add the ability to view user profiles, you could add a "Total Users" stat here. #}

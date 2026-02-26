@@ -1,0 +1,207 @@
+Admin user view and group detail · HTML
+Copy
+
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/user_view.html
+Admin views a user's full dashboard.
+Same data as the user sees — no duplicate templates.
+EXPAND: add an edit profile section at the top.
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}{{ target_user.email }}{% endblock %}
+{% block topbar_title %}Viewing User{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ target_user.email }}</h1>
+    <p class="page-subtitle">
+      {{ target_user.first_name }} {{ target_user.last_name }}
+      · Joined {{ target_user.date_joined|date:"M d, Y" }}
+      {% if not target_user.is_active %}
+        · <span style="color:var(--danger);">Inactive</span>
+      {% endif %}
+    </p>
+  </div>
+  <a href="{% url 'admin_panel:user_list' %}" class="btn btn-outline">← Back to Users</a>
+</div>
+
+<!-- User info strip -->
+<div class="card" style="margin-bottom:1rem;">
+  <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:1rem;">
+    <div>
+      <div class="text-muted text-small">Email</div>
+      <div style="font-weight:500; margin-top:0.2rem;">{{ target_user.email }}</div>
+    </div>
+    <div>
+      <div class="text-muted text-small">Name</div>
+      <div style="font-weight:500; margin-top:0.2rem;">
+        {{ target_user.first_name }} {{ target_user.last_name }}
+      </div>
+    </div>
+    {% if target_user.profile.phone %}
+    <div>
+      <div class="text-muted text-small">Phone</div>
+      <div style="font-weight:500; margin-top:0.2rem;">{{ target_user.profile.phone }}</div>
+    </div>
+    {% endif %}
+    <div>
+      <div class="text-muted text-small">Total Cases</div>
+      <div style="font-family:var(--font-serif); font-size:1.5rem; line-height:1;">
+        {{ personal_cases|length|add:group_cases|length|add:managed_cases|length }}
+      </div>
+    </div>
+    <div>
+      <div class="text-muted text-small">Groups</div>
+      <div style="font-family:var(--font-serif); font-size:1.5rem; line-height:1;">
+        {{ memberships|length }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Personal Cases -->
+<div class="card" style="margin-bottom:1rem;">
+  <div class="card-header">Personal Cases</div>
+  {% if personal_cases %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Case #</th>
+            <th>Category</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for case in personal_cases %}
+            <tr>
+              <td>#{{ case.id }}</td>
+              <td>{{ case.category.name }}</td>
+              <td><span class="badge badge-{{ case.status }}">{{ case.status }}</span></td>
+              <td class="text-muted">{{ case.created_at|date:"M d, Y" }}</td>
+              <td class="text-right">
+                <a href="{% url 'admin_panel:case_detail' case.id %}"
+                   class="btn btn-sm btn-outline">View</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="text-muted">No personal cases.</p>
+  {% endif %}
+</div>
+
+<!-- Group Cases -->
+{% if group_cases %}
+<div class="card" style="margin-bottom:1rem;">
+  <div class="card-header">Group Cases</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Case #</th>
+          <th>Group</th>
+          <th>Category</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for case in group_cases %}
+          <tr>
+            <td>#{{ case.id }}</td>
+            <td>{{ case.group.name }}</td>
+            <td>{{ case.category.name }}</td>
+            <td><span class="badge badge-{{ case.status }}">{{ case.status }}</span></td>
+            <td class="text-right">
+              <a href="{% url 'admin_panel:case_detail' case.id %}"
+                 class="btn btn-sm btn-outline">View</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Managed Profile Cases -->
+{% if managed_cases %}
+<div class="card" style="margin-bottom:1rem;">
+  <div class="card-header">Cases for Managed Profiles</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Case #</th>
+          <th>For</th>
+          <th>Category</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for case in managed_cases %}
+          <tr>
+            <td>#{{ case.id }}</td>
+            <td>{{ case.managed_profile.full_name }}</td>
+            <td>{{ case.category.name }}</td>
+            <td><span class="badge badge-{{ case.status }}">{{ case.status }}</span></td>
+            <td class="text-right">
+              <a href="{% url 'admin_panel:case_detail' case.id %}"
+                 class="btn btn-sm btn-outline">View</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Groups -->
+{% if memberships %}
+<div class="card">
+  <div class="card-header">Groups</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Group</th>
+          <th>Type</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in memberships %}
+          <tr>
+            <td>{{ m.group.name }}</td>
+            <td><span class="badge badge-neutral">{{ m.group.type }}</span></td>
+            <td>{{ m.role.name|default:"—" }}</td>
+            <td>
+              {% if m.is_active %}
+                <span class="badge badge-active">active</span>
+              {% else %}
+                <span class="badge badge-rejected">suspended</span>
+              {% endif %}
+            </td>
+            <td class="text-right">
+              <a href="{% url 'admin_panel:group_detail' m.group.id %}"
+                 class="btn btn-sm btn-outline">Manage Group</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

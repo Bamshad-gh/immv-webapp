@@ -1,0 +1,366 @@
+
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/base_admin.html
+Base template for ALL admin panel pages.
+Sidebar navigation — only shows links the admin has permission for.
+CUSTOMIZE: update brand name, sidebar links.
+EXPAND: add a notifications section in the sidebar.
+============================================================ --><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Admin Panel{% endblock %} — CaseFlow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --navy:        #0f1923;
+      --cream:       #f7f5f0;
+      --amber:       #0ac839;
+      --amber-light: #f5e6c8;
+      --slate:       #4a5568;
+      --border:      #e2ddd6;
+      --white:       #ffffff;
+      --danger:      #c0392b;
+      --success:     #2e7d52;
+      --sidebar-width: 230px;
+      --font-serif: 'Instrument Serif', Georgia, serif;
+      --font-sans:  'DM Sans', system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--cream);
+      color: var(--navy);
+      font-size: 15px;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: var(--sidebar-width);
+      background: var(--navy);
+      min-height: 100vh;
+      position: fixed;
+      top: 0; left: 0;
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+    }
+
+    .sidebar-brand {
+      padding: 1.5rem 1.25rem 1rem;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+
+    .sidebar-brand a {
+      font-family: var(--font-serif);
+      font-size: 1.2rem;
+      color: var(--white);
+      text-decoration: none;
+    }
+
+    .sidebar-brand a span { color: var(--amber); }
+
+    .sidebar-label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.3);
+      padding: 1.25rem 1.25rem 0.4rem;
+    }
+
+    .sidebar-nav {
+      list-style: none;
+      padding: 0 0.75rem;
+    }
+
+    .sidebar-nav li a {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.55rem 0.75rem;
+      color: rgba(255,255,255,0.6);
+      text-decoration: none;
+      font-size: 0.875rem;
+      border-radius: 4px;
+      transition: all 0.15s;
+      margin-bottom: 2px;
+    }
+
+    .sidebar-nav li a:hover {
+      color: var(--white);
+      background: rgba(255,255,255,0.07);
+    }
+
+    .sidebar-nav li admin_profile.active {
+      color: var(--amber);
+      background: rgba(200,130,10,0.12);
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 1rem 1.25rem;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.4);
+    }
+
+    .sidebar-footer a {
+      color: rgba(255,255,255,0.4);
+      text-decoration: none;
+      display: block;
+      margin-top: 0.4rem;
+      transition: color 0.15s;
+    }
+
+    .sidebar-footer a:hover { color: rgba(255,255,255,0.7); }
+
+    /* ── Main content ── */
+    .admin-main {
+      margin-left: var(--sidebar-width);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .admin-topbar {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .admin-topbar-title { font-size: 0.875rem; font-weight: 600; color: var(--navy); }
+    .admin-topbar-user  { font-size: 0.8rem; color: var(--slate); }
+
+    .admin-content { padding: 2rem; max-width: 1200px; }
+
+    /* ── Page structure ── */
+    .page-header {
+      margin-bottom: 2rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .page-title    { font-family: var(--font-serif); font-size: 1.75rem; font-weight: 400; }
+    .page-subtitle { color: var(--slate); font-size: 0.875rem; margin-top: 0.25rem; }
+
+    /* ── Cards ── */
+    .card { background: var(--white); border: 1px solid var(--border); padding: 1.5rem; }
+    .card + .card { margin-top: 1rem; }
+    .card-header {
+      font-family: var(--font-serif);
+      font-size: 1.1rem;
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ── Stat cards ── */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card { background: var(--white); border: 1px solid var(--border); padding: 1.25rem 1.5rem; }
+    .stat-card.accent { border-left: 3px solid var(--amber); }
+    .stat-number { font-family: var(--font-serif); font-size: 2rem; color: var(--navy); line-height: 1; }
+    .stat-label  { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--slate); margin-top: 0.4rem; }
+
+    /* ── Tables ── */
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    thead th {
+      text-align: left; padding: 0.6rem 1rem;
+      font-weight: 600; font-size: 0.75rem;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--slate); background: var(--cream);
+      border-bottom: 1px solid var(--border);
+    }
+    tbody td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #faf9f6; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.5rem 1.1rem; font-family: var(--font-sans);
+      font-size: 0.875rem; font-weight: 500;
+      border: 1px solid transparent; cursor: pointer;
+      text-decoration: none; transition: all 0.15s; white-space: nowrap;
+    }
+    .btn-primary { background: var(--amber); color: var(--white); border-color: var(--amber); }
+    .btn-primary:hover { background: #b5720a; }
+    .btn-outline { background: transparent; color: var(--navy); border-color: var(--border); }
+    .btn-outline:hover { border-color: var(--navy); }
+    .btn-danger  { background: transparent; color: var(--danger); border-color: #e8c5c3; }
+    .btn-danger:hover { background: #fdf0ef; }
+    .btn-success { background: transparent; color: var(--success); border-color: #b7dfca; }
+    .btn-success:hover { background: #f0faf4; }
+    .btn-sm { padding: 0.3rem 0.75rem; font-size: 0.8rem; }
+
+    /* ── Forms ── */
+    .form-group { margin-bottom: 1.25rem; }
+    label {
+      display: block; font-size: 0.8rem; font-weight: 600;
+      letter-spacing: 0.04em; text-transform: uppercase;
+      color: var(--slate); margin-bottom: 0.4rem;
+    }
+    input[type="text"], input[type="email"], input[type="password"],
+    input[type="date"], input[type="number"], select, textarea {
+      width: 100%; padding: 0.6rem 0.875rem; font-family: var(--font-sans);
+      font-size: 0.9rem; color: var(--navy); background: var(--white);
+      border: 1px solid var(--border); outline: none; transition: border-color 0.15s;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--amber); }
+    textarea { resize: vertical; min-height: 80px; }
+    .errorlist { list-style: none; margin-top: 0.3rem; }
+    .errorlist li { font-size: 0.8rem; color: var(--danger); }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
+    /* ── Permission checkboxes ── */
+    .permission-check { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .permission-check input[type="checkbox"] { width: auto; }
+    .permission-check label { text-transform: none; letter-spacing: 0; font-size: 0.875rem; color: var(--navy); margin: 0; }
+
+    /* ── Messages ── */
+    .messages { margin-bottom: 1.5rem; }
+    .message { padding: 0.75rem 1rem; font-size: 0.875rem; border-left: 3px solid; }
+    .message-success { background: #f0faf4; border-color: var(--success); color: var(--success); }
+    .message-error   { background: #fdf0ef; border-color: var(--danger); color: var(--danger); }
+
+    /* ── Badges ── */
+    .badge { display: inline-block; padding: 0.2rem 0.6rem; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+    .badge-pending   { background: #fef3c7; color: #92400e; }
+    .badge-active    { background: #d1fae5; color: #065f46; }
+    .badge-completed { background: #dbeafe; color: #1e40af; }
+    .badge-rejected  { background: #fee2e2; color: #991b1b; }
+    .badge-neutral   { background: var(--cream); color: var(--slate); border: 1px solid var(--border); }
+
+    /* ── Utilities ── */
+    .empty-state { text-align: center; padding: 3rem 1rem; color: var(--slate); }
+    .empty-state-title { font-family: var(--font-serif); font-size: 1.2rem; margin-bottom: 0.5rem; color: var(--navy); }
+    .text-muted   { color: var(--slate); font-size: 0.875rem; }
+    .text-small   { font-size: 0.8rem; }
+    .text-right   { text-align: right; }
+    .flex-between { display: flex; justify-content: space-between; align-items: center; }
+    .flex-center  { display: flex; align-items: center; gap: 0.5rem; }
+    .mt-1 { margin-top: 0.5rem; }
+    .mt-2 { margin-top: 1rem; }
+    .mt-3 { margin-top: 1.5rem; }
+    .divider { height: 1px; background: var(--border); margin: 1.5rem 0; }
+
+    /* CUSTOMIZE: swap CSS variables above to retheme everything */
+    /* EXPAND:    add new utility classes here as the project grows */
+  </style>
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <a href="{% url 'admin_panel:admin_dashboard' %}">Case<span>Flow</span></a>
+      <div style="font-size:0.7rem; color:rgba(255,255,255,0.3); margin-top:0.2rem;">Admin Panel</div>
+    </div>
+
+    {% if request.user.is_authenticated %}
+
+      <div class="sidebar-label">Overview</div>
+      <ul class="sidebar-nav">
+        <li><a href="{% url 'admin_panel:admin_dashboard' %}">Dashboard</a></li>
+      </ul>
+
+      {# Users section — superuser or admin with can_create_users #}
+      {% if is_super or ap.can_create_users %}
+        <div class="sidebar-label">Users</div>
+        <ul class="sidebar-nav">
+          <li><a href="{% url 'admin_panel:user_list' %}">All Users</a></li>
+          <li><a href="{% url 'admin_panel:create_user' %}">Create User</a></li>
+        </ul>
+      {% endif %}
+
+      {# Cases section — superuser or admin with can_view_all_cases #}
+      {% if is_super or ap.can_view_all_cases %}
+        <div class="sidebar-label">Cases</div>
+        <ul class="sidebar-nav">
+          <li><a href="{% url 'admin_panel:case_list' %}">All Cases</a></li>
+          <li><a href="{% url 'admin_panel:create_case' %}">Create Case</a></li>
+        </ul>
+      {% endif %}
+
+      {# Groups section — superuser or admin with can_create_groups #}
+      {% if is_super or admin_profile.can_create_groups %}
+        <div class="sidebar-label">Groups</div>
+        <ul class="sidebar-nav">
+          <li><a href="{% url 'admin_panel:group_list' %}">All Groups</a></li>
+        </ul>
+      {% endif %}
+
+      {# Superadmin section — superusers only, never shown to regular admins #}
+      {% if is_super %}
+        <div class="sidebar-label">Superadmin</div>
+        <ul class="sidebar-nav">
+          <li><a href="{% url 'admin_panel:manage_admins' %}">Manage Admins</a></li>
+          <li><a href="{% url 'admin_panel:create_admin' %}">Create Admin</a></li>
+        </ul>
+      {% endif %}
+
+      <!--EXPAND: add new sidebar sections here using same pattern:
+         {#% if is_super or ap.can_your_new_permission %#}
+           <div class="sidebar-label">Section Name</div>
+           <ul class="sidebar-nav">
+             <li><a href="{#% url 'admin_panel:your_view' %#}">Link</a></li>
+           </ul>
+         {#% endif %#}
+            #-->
+
+    {% endif %}
+
+    <div class="sidebar-footer">
+      {{ request.user.email }}
+      <a href="{% url 'admin_panel:admin_logout' %}">Sign out</a>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="admin-main">
+    <div class="admin-topbar">
+      <span class="admin-topbar-title">{% block topbar_title %}{% endblock %}</span>
+      <span class="admin-topbar-user">{{ request.user.first_name }} {{ request.user.last_name }}</span>
+    </div>
+
+    <div class="admin-content">
+      {% if messages %}
+        <div class="messages">
+          {% for message in messages %}
+            <div class="message message-{{ message.tags }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  
+
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

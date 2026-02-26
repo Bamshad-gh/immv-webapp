@@ -1,0 +1,155 @@
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/create_case.html
+Service → Category → Subcategory filtered chain via AJAX.
+EXPAND: add group/managed_profile selection if needed.
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Create Case{% endblock %}
+{% block topbar_title %}Create Case{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Create Case</h1>
+</div>
+<div class="card" style="max-width:600px;">
+  <form method="POST" id="create-case-form">
+    {% csrf_token %}
+<div class="form-group">
+  <label>User Email</label>
+  {{ form.user_email }}
+  {{ form.user_email.errors }}
+  <p class="text-muted text-small mt-1">The user must already have an account.</p>
+</div>
+
+<div class="divider"></div>
+
+<div class="form-group">
+  <label>Service</label>
+  {{ form.service }}
+  {{ form.service.errors }}
+</div>
+
+
+<!-- Dynamic category chain — dropdowns added here by JavaScript -->
+<div id="category-chain"></div>
+
+<!-- Hidden field — always holds the deepest selected category -->
+<!-- This is what gets submitted to the view -->
+<input type="hidden" name="final_category" id="id_final_category">
+<input type="hidden" name="subcategory" id="id_subcategory_unused" value="">
+
+
+
+
+<div class="form-group">
+  <label>Admin Notes <span style="font-weight:400; text-transform:none;">(optional)</span></label>
+  {{ form.notes }}
+</div>
+
+{% if form.non_field_errors %}
+  <div class="message message-error" style="margin-bottom:1rem;">
+    {{ form.non_field_errors }}
+  </div>
+{% endif %}
+
+<div class="divider"></div>
+<div class="flex-between">
+  <a href="{% url 'admin_panel:case_list' %}" class="btn btn-outline">Cancel</a>
+  <button type="submit" class="btn btn-primary">Create Case</button>
+</div>
+  </form>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+// ── Infinite category chain ───────────────────────────────
+  // Each time admin selects a category, fetch its children.
+  // If children exist → add a new dropdown below.
+  // If no children → this is the final level (used for the case).
+  // The last selected value is always sent as 'category' on submit.
+
+  const serviceSelect  = document.getElementById('id_service');
+  const chainContainer = document.getElementById('category-chain');
+
+  // Track all created dropdowns so we can remove deeper ones when going back
+  let dropdowns = [];
+
+  function removeDropdownsAfter(index) {
+    // When admin changes a dropdown, remove all dropdowns below it
+    while (dropdowns.length > index) {
+      const el = dropdowns.pop();
+      el.remove();
+    }
+    // Clear the hidden final value
+    document.querySelector('input[name="final_category"]').value = '';
+
+  }
+
+  function addDropdown(categories, depth) {
+    removeDropdownsAfter(depth);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'form-group';
+
+    const label = document.createElement('label');
+    label.textContent = depth === 0 ? 'Category' : 'Subcategory';
+    wrapper.appendChild(label);
+
+    const select = document.createElement('select');
+    select.className = 'category-select';
+    select.innerHTML = '<option value="">Select...</option>';
+
+    categories.forEach(cat => {
+      const opt = document.createElement('option');
+      opt.value = cat.id;
+      opt.textContent = cat.name;
+      select.appendChild(opt);
+    });
+
+    select.addEventListener('change', function() {
+      const catId = this.value;
+      if (!catId) {
+        removeDropdownsAfter(depth + 1);
+        document.querySelector('input[name="final_category"]').value = '';
+
+        return;
+      }
+
+      // This is now the current final selection
+      document.querySelector('input[name="final_category"]').value = catId;
+
+
+      // Fetch children of this category
+      fetch(`{% url 'admin_panel:get_subcategories' %}?category_id=${catId}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.subcategories.length > 0) {
+            // Has children — add another dropdown
+            addDropdown(data.subcategories, depth + 1);
+          } else {
+            // No children — this is the final level, remove any deeper dropdowns
+            removeDropdownsAfter(depth + 1);
+          }
+        });
+    });
+
+    wrapper.appendChild(select);
+    chainContainer.appendChild(wrapper);
+    dropdowns.push(wrapper);
+  }
+
+  // When service changes — reset everything and load top-level categories
+  serviceSelect.addEventListener('change', function() {
+    removeDropdownsAfter(0);
+    const serviceId = this.value;
+    if (!serviceId) return;
+
+    fetch(`{% url 'admin_panel:get_categories' %}?service_id=${serviceId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.categories.length > 0) {
+          addDropdown(data.categories, 0);
+        }
+      });
+  });
+</script>
+{% endblock %}

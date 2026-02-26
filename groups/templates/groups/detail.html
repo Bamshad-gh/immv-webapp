@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}{{ group.name }}{% endblock %}
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{{ group.name }}</h1>
+      <div class="flex-center mt-1">
+        <span class="badge badge-neutral">{{ group.type }}</span>
+        {% if group.type == "family" %}
+          <span class="text-muted text-small">{{ group.family_info.family_name }}</span>
+        {% elif group.type == "business" %}
+          <span class="text-muted text-small">{{ group.business_info.company_name }}</span>
+        {% endif %}
+      </div>
+    </div>
+{% if can_manage_members %}
+  <div class="flex-center" style="gap:0.5rem; flex-wrap:wrap;">
+    <a href="{% url 'groups:add_member' group.id %}" class="btn btn-outline btn-sm">+ Add Member</a>
+    <a href="{% url 'groups:create_managed_profile' group.id %}" class="btn btn-outline btn-sm">+ Add Person</a>
+  </div>
+{% endif %}
+  </div>
+  <!-- Members -->
+{% if can_view_members %}
+  <div class="card mb-2">
+    <div class="card-header">Members</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Member</th>
+            <th>Role</th>
+            <th>Joined</th>
+            {% if can_manage_members %}<th></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in all_memberships %}
+            <tr>
+              <td>{{ m.user.email }}</td>
+              <td>{{ m.role.name|default:"—" }}</td>
+              <td class="text-muted">{{ m.joined_at|date:"M d, Y" }}</td>
+              {% if can_manage_members %}
+                <td class="text-right">
+                  {# EXPAND: link to a remove_member view #}
+                </td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+  <!-- Managed Profiles -->
+{% if managed_profiles %}
+  <div class="card mb-2" style="margin-top:1rem;">
+    <div class="card-header">Interior Persons</div>
+    <div class="grid-3" style="margin-top:0;">
+      {% for profile in managed_profiles %}
+        <div style="border:1px solid var(--border); padding:1rem;">
+          <div style="font-family:var(--font-serif); font-size:1rem;">
+            {{ profile.full_name }}
+          </div>
+          <div class="text-muted text-small mt-1">
+            Managed by {{ profile.created_by.email }}
+          </div>
+          {% if can_fill_cases %}
+            <div style="margin-top:0.75rem;">
+              {# EXPAND: link to managed profile's cases #}
+              <a href="#" class="btn btn-sm btn-outline">View Cases</a>
+            </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  <!-- Group Cases -->
+{% if group_cases and can_fill_cases %}
+  <div class="card" style="margin-top:1rem;">
+    <div class="card-header">Group Cases</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Case #</th>
+            <th>Category</th>
+            <th>Status</th>
+            <th>Submitted by</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for case in group_cases %}
+            <tr>
+              <td>#{{ case.id }}</td>
+              <td>{{ case.category.name }}</td>
+              <td><span class="badge badge-{{ case.status }}">{{ case.status }}</span></td>
+              <td class="text-muted">{{ case.user.email }}</td>
+              <td class="text-right">
+                <a href="{% url 'cases:case-detail' case.id %}" class="btn btn-sm btn-outline">
+                  Fill
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+<!--
