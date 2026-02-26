@@ -59,3 +59,20 @@ class Profile(models.Model):
 
     def __str__(self):
         return f'{self.user.first_name} {self.user.last_name}'
+    
+# ── managed profile model ─────────────────────────────────────────────
+class managed_Profile(models.Model):
+    user             = models.OneToOneField(User, on_delete=models.CASCADE)
+    managed_Profile_first_name = models.CharField(max_length=30, blank=True, null=True)
+    managed_Profile_last_name  = models.CharField(max_length=30, blank=True, null=True)
+    # on_delete=CASCADE means: if User is deleted → Profile is deleted too
+    managed_Profile_date_of_birth    = models.DateField(blank=True, null=True)
+    managed_Profile_gender           = models.CharField(max_length=10, blank=True, null=True)
+    managed_Profile_country_of_birth = models.CharField(max_length=100, blank=True, null=True)
+    managed_Profile_city_of_birth    = models.CharField(max_length=100, blank=True, null=True)
+    managed_Profile_passport_picture = models.ImageField(upload_to='passport_pictures/', blank=True, null=True)
+    managed_Profile_passport_number  = models.CharField(max_length=20, blank=True, null=True)
+    managed_Profile_profile_picture  = models.ImageField(upload_to='profile_pictures/', blank=True, null=True)
+
+    def __str__(self):
+        return f'{self.managed_Profile_first_name} {self.managed_Profile_last_name}'

@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     # Your apps
     'users',
     'cases',
+    'groups',
 ]
 # Tell Django to use YOUR User model
 AUTH_USER_MODEL = 'users.User'
