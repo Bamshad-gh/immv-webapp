@@ -7,5 +7,5 @@ def admin_context(request):
         return {}
     return {
         'admin_profile': getattr(request.user, 'admin_profile', None),
-        'is_super':      request.user.is_superuser,
+        'is_super':      request.user.is_superuser, 
     }

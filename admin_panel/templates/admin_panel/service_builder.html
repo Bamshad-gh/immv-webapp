@@ -1,0 +1,909 @@
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Service Builder{% endblock %}
+{% block topbar_title %}Service Builder{% endblock %}
+
+{% block extra_css %}
+<style>
+  /*
+   * Three-panel layout — reveals left to right as admin drills deeper.
+   * Each panel scrolls independently.
+   * CUSTOMIZE: change --panel-width to adjust column sizes.
+   */
+  .builder-wrap {
+    display: grid;
+    grid-template-columns: 220px 1fr 1fr;
+    gap: 1rem;
+    align-items: start;
+    min-height: calc(100vh - 140px);
+  }
+
+  .builder-panel {
+    background: var(--white);
+    border: 1px solid var(--border);
+    min-height: 400px;
+    position: relative;
+  }
+
+  .panel-header {
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--slate);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* ── List items in panels ── */
+  .panel-item {
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.875rem;
+    transition: background 0.1s;
+    user-select: none;
+  }
+
+  .panel-item:hover    { background: #faf9f6; }
+  .panel-item.selected { background: var(--amber-light); color: var(--navy); }
+
+  .panel-item-name  { font-weight: 500; }
+  .panel-item-meta  { font-size: 0.75rem; color: var(--slate); margin-top:0.1rem; }
+  .panel-item-arrow { color: var(--slate); font-size: 0.75rem; }
+
+  /* ── Inline forms inside panels ── */
+  .inline-form {
+    display: none;
+    padding: 1rem;
+    background: var(--cream);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .inline-form.open { display: block; }
+
+  .inline-form input,
+  .inline-form textarea,
+  .inline-form select {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+    border: 1px solid var(--border);
+    background: var(--white);
+    color: var(--navy);
+    outline: none;
+    margin-bottom: 0.5rem;
+  }
+
+  .inline-form input:focus,
+  .inline-form select:focus,
+  .inline-form textarea:focus { border-color: var(--amber); }
+
+  .inline-form textarea { resize: vertical; min-height: 60px; }
+
+  .inline-form-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+  }
+
+  /* ── Requirement rows in right panel ── */
+  .req-row {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.875rem;
+  }
+
+  .req-edit-form {
+    display: none;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .req-edit-form.open { display: block; }
+
+  /* ── Inherited section ── */
+  .inherited-section {
+    background: #faf9f6;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--slate);
+  }
+
+  /* ── Error display ── */
+  .inline-error {
+    font-size: 0.8rem;
+    color: var(--danger);
+    margin-bottom: 0.4rem;
+    display: none;
+  }
+
+  .inline-error.show { display: block; }
+
+  /* ── Empty state inside panel ── */
+  .panel-empty {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: var(--slate);
+    font-size: 0.875rem;
+  }
+
+  /* ── Add button in panel header ── */
+  .btn-add {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.6rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--navy);
+    cursor: pointer;
+    font-family: var(--font-sans);
+    transition: all 0.15s;
+  }
+
+  .btn-add:hover {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+  
+  /* ── Delete btn ── */
+  .btn-delete {
+  background: transparent;
+  border: none;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.35rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.panel-item:hover .btn-delete { opacity: 1; }
+
+  /* ── Type badge ── */
+  .type-badge {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: var(--cream);
+    border: 1px solid var(--border);
+    color: var(--slate);
+    margin-left: 0.35rem;
+  }
+
+  /* ── Category chain breadcrumb ── */
+  .chain-header {
+    padding: 0.6rem 1rem;
+    background: var(--cream);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--slate);
+    min-height: 2.2rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Service Builder</h1>
+    <p class="page-subtitle">
+      Select a service, drill into categories, manage requirements.
+    </p>
+  </div>
+  <a href="{% url 'admin_panel:service_list' %}" class="btn btn-outline">
+    ← All Services
+  </a>
+</div>
+
+<div class="builder-wrap">
+
+  <!-- ── PANEL 1: Services ───────────────────────────── -->
+  <div class="builder-panel" id="panel-services">
+    <div class="panel-header">
+      Services
+      <button class="btn-add" onclick="toggleForm('form-new-service')">+ New</button>
+    </div>
+
+    <!-- Inline create service form -->
+    <div class="inline-form" id="form-new-service">
+      <div class="inline-error" id="err-service-name"></div>
+      <input type="text" id="new-service-name" placeholder="Service name">
+      <textarea id="new-service-desc" placeholder="Description (optional)" rows="2"></textarea>
+      <div class="inline-form-actions">
+        <button class="btn btn-sm btn-primary" onclick="createService()">Create</button>
+        <button class="btn btn-sm btn-outline"
+                onclick="toggleForm('form-new-service')">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Service list — populated by JS -->
+    <div id="service-list">
+      <div class="panel-empty">Loading...</div>
+    </div>
+  </div>
+
+  <!-- ── PANEL 2: Category Chain ─────────────────────── -->
+  <div class="builder-panel" id="panel-categories">
+    <div class="panel-header">
+      <span id="panel2-title">Categories</span>
+      <button class="btn-add"
+              id="btn-add-category"
+              style="display:none;"
+              onclick="toggleForm('form-new-category')">
+        + New
+      </button>
+    </div>
+
+    <!-- Breadcrumb trail showing current selection path -->
+    <div class="chain-header" id="category-breadcrumb" style="display:none;"></div>
+
+    <!-- Inline create category form -->
+    <div class="inline-form" id="form-new-category">
+      <div class="inline-error" id="err-category-name"></div>
+      <input type="text" id="new-category-name" placeholder="Category name">
+      <textarea id="new-category-desc"
+                placeholder="Description (optional)"
+                rows="2"></textarea>
+      <div class="inline-form-actions">
+        <button class="btn btn-sm btn-primary" onclick="createCategory()">Create</button>
+        <button class="btn btn-sm btn-outline"
+                onclick="toggleForm('form-new-category')">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Category chain — populated by JS level by level -->
+    <div id="category-chain-container">
+      <div class="panel-empty" id="categories-empty">
+        Select a service to view its categories.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PANEL 3: Requirements ────────────────────────── -->
+  <div class="builder-panel" id="panel-requirements">
+    <div class="panel-header">
+      <span id="panel3-title">Requirements</span>
+      <button class="btn-add"
+              id="btn-add-requirement"
+              style="display:none;"
+              onclick="toggleForm('form-new-requirement')">
+        + Add
+      </button>
+    </div>
+
+    <!-- Inline create requirement form -->
+    <div class="inline-form" id="form-new-requirement">
+      <div class="inline-error" id="err-req-name"></div>
+      <input type="text" id="new-req-name" placeholder="Requirement name">
+      <select id="new-req-type">
+        <option value="">Select type...</option>
+        <option value="text">Text</option>
+        <option value="question">Question</option>
+        <option value="number">Number</option>
+        <option value="date">Date</option>
+        <option value="document">Document Upload</option>
+      </select>
+      <textarea id="new-req-desc"
+                placeholder="Description shown to user (optional)"
+                rows="2"></textarea>
+      <label style="display:flex; align-items:center; gap:0.4rem;
+                     font-size:0.8rem; margin-bottom:0.5rem; cursor:pointer;">
+        <input type="checkbox" id="new-req-required" checked
+               style="width:auto; margin:0;">
+        Required
+      </label>
+      <div class="inline-form-actions">
+        <button class="btn btn-sm btn-primary" onclick="createRequirement()">Add</button>
+        <button class="btn btn-sm btn-outline"
+                onclick="toggleForm('form-new-requirement')">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Requirements list — populated by JS -->
+    <div id="requirements-list">
+      <div class="panel-empty" id="requirements-empty">
+        Select a category to view its requirements.
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/*
+ * ─────────────────────────────────────────────────────────────
+ * SERVICE BUILDER — Client-side JavaScript
+ *
+ * State object tracks current selections:
+ *   state.serviceId    — currently selected service
+ *   state.serviceName  — for display
+ *   state.categoryId   — deepest selected category
+ *   state.categoryPath — array of {id, name} from root to selected
+ *                        used for breadcrumb + knowing where to create subcategories
+ *
+ * Flow:
+ *   1. On load → fetch services → render Panel 1
+ *   2. Click service → fetch top categories → render Panel 2
+ *   3. Click category → fetch its detail → render Panel 3 (requirements)
+ *                     → if has_children → add sub-level below in Panel 2
+ *   4. Click subcategory → same as step 3
+ *   5. + New buttons → toggle inline forms → POST to AJAX endpoint → re-render
+ *
+ * CSRF token is read from the cookie — Django sets it automatically.
+ * EXPAND: add drag-and-drop requirement ordering once an 'order' field
+ *         is added to the Requirement model.
+ * ─────────────────────────────────────────────────────────────
+ */
+
+// ── State ─────────────────────────────────────────────────────
+const state = {
+  serviceId:    null,
+  serviceName:  '',
+  categoryId:   null,
+  categoryPath: [],   // [{id, name}] from root to deepest selected
+};
+
+// ── CSRF helper ───────────────────────────────────────────────
+// Reads CSRF token from cookie — required for all POST requests.
+function getCsrf() {
+  const name    = 'csrftoken';
+  const cookies = document.cookie.split(';');
+  for (let c of cookies) {
+    const [k, v] = c.trim().split('=');
+    if (k === name) return decodeURIComponent(v);
+  }
+  return '';
+}
+
+// ── API helpers ───────────────────────────────────────────────
+// All API calls go through these two functions.
+// GET → returns parsed JSON
+// POST → sends JSON body, returns parsed JSON
+
+async function apiGet(url) {
+  const res = await fetch(url);
+  return res.json();
+}
+
+async function apiPost(url, body) {
+  const res = await fetch(url, {
+    method:  'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken':  getCsrf(),
+    },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+// ── Toggle inline form ─────────────────────────────────────────
+function toggleForm(formId) {
+  const form = document.getElementById(formId);
+  if (form) form.classList.toggle('open');
+}
+
+// ── Show/clear inline errors ──────────────────────────────────
+function showError(elId, msg) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+}
+
+function clearError(elId) {
+  const el = document.getElementById(elId);
+  if (el) el.classList.remove('show');
+}
+
+// ── Render helpers ─────────────────────────────────────────────
+
+function renderServiceList(services) {
+  const container = document.getElementById('service-list');
+
+  if (!services.length) {
+    container.innerHTML = '<div class="panel-empty">No services yet. Create one above.</div>';
+    return;
+  }
+
+  container.innerHTML = services.map(s => `
+  <div class="panel-item ${s.id === state.serviceId ? 'selected' : ''}"
+       onclick="selectService(${s.id}, '${escHtml(s.name)}')">
+    <div>
+      <div class="panel-item-name">${escHtml(s.name)}</div>
+      <div class="panel-item-meta">${s.category_count} categories</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:0.4rem;">
+      <span class="panel-item-arrow">›</span>
+      <button class="btn-delete"
+              onclick="event.stopPropagation(); deleteService(${s.id})"
+              title="Delete service">✕</button>
+    </div>
+  </div>
+`).join('');
+}
+
+function renderCategoryLevel(categories, depth, parentId) {
+  /*
+   * Renders one level of the category chain.
+   * Each level gets its own container div with id='cat-level-{depth}'.
+   * When a deeper level is selected, shallower levels stay visible above.
+   *
+   * depth=0 → top-level categories for a service
+   * depth=1 → subcategories of selected depth-0 category
+   * etc.
+   */
+
+  // Remove any levels deeper than this one
+  let i = depth;
+  while (true) {
+    const el = document.getElementById(`cat-level-${i}`);
+    if (!el) break;
+    el.remove();
+    i++;
+  }
+
+  const container = document.getElementById('category-chain-container');
+  const empty     = document.getElementById('categories-empty');
+  if (empty) empty.style.display = 'none';
+
+  if (!categories.length) {
+    // No categories at this level — show add button hint
+    const hint = document.createElement('div');
+    hint.id        = `cat-level-${depth}`;
+    hint.className = 'panel-empty';
+    hint.textContent = depth === 0
+      ? 'No categories yet. Click + New to add one.'
+      : 'No subcategories. Click + New to add one.';
+    container.appendChild(hint);
+    return;
+  }
+
+  const level = document.createElement('div');
+  level.id = `cat-level-${depth}`;
+
+  // Divider label if nested
+  if (depth > 0) {
+    const label     = document.createElement('div');
+    label.className = 'chain-header';
+    label.textContent = '↳ Subcategories';
+    level.appendChild(label);
+  }
+
+  categories.forEach(cat => {
+    const item = document.createElement('div');
+    item.className = `panel-item ${cat.id === state.categoryId ? 'selected' : ''}`;
+    item.innerHTML = `
+  <div>
+    <div class="panel-item-name">${escHtml(cat.name)}</div>
+    <div class="panel-item-meta">
+      ${cat.req_count} req
+      ${cat.has_children ? ' · has subcategories' : ''}
+    </div>
+  </div>
+  <div style="display:flex; align-items:center; gap:0.4rem;">
+    <span class="panel-item-arrow">›</span>
+    <button class="btn-delete"
+            onclick="event.stopPropagation(); deleteCategory(${cat.id}, ${depth}, ${parentId})"
+            title="Delete category">✕</button>
+  </div>
+`;
+    item.onclick = () => selectCategory(cat.id, cat.name, depth, parentId);
+    level.appendChild(item);
+  });
+
+  container.appendChild(level);
+}
+
+function renderRequirements(ownReqs, inherited, categoryName) {
+  const container = document.getElementById('requirements-list');
+  const title     = document.getElementById('panel3-title');
+  const btn       = document.getElementById('btn-add-requirement');
+
+  title.textContent = categoryName;
+  btn.style.display = '';
+
+  let html = '';
+
+  // Own requirements
+  if (ownReqs.length) {
+    ownReqs.forEach(req => {
+      html += `
+        <div class="req-row" id="req-row-${req.id}">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+              <span style="font-weight:500;">${escHtml(req.name)}</span>
+              <span class="type-badge">${req.type}</span>
+              ${req.is_required
+                ? '<span class="type-badge" style="border-color:#b7dfca;color:#2e7d52;">required</span>'
+                : ''}
+            </div>
+            <button class="btn btn-sm btn-outline"
+                    onclick="toggleReqEdit(${req.id})">
+              Edit
+            </button>
+                <button class="btn btn-sm btn-danger"
+                onclick="deleteRequirement(${req.id})">
+                Delete
+            </button>
+          </div>
+          ${req.description
+            ? `<div class="text-muted text-small mt-1" 
+                style="word-break:break-word; white-space:pre-wrap;">
+                ${escHtml(req.description)}
+                </div>`
+            : ''}
+
+          <!-- Inline edit form for this requirement -->
+          <div class="req-edit-form" id="req-edit-${req.id}">
+            <div class="inline-error" id="err-req-edit-${req.id}"></div>
+            <input type="text"
+                   id="edit-req-name-${req.id}"
+                   value="${escHtml(req.name)}"
+                   placeholder="Name">
+            <select id="edit-req-type-${req.id}">
+              ${['text','question','number','date','document'].map(t =>
+                `<option value="${t}" ${req.type === t ? 'selected' : ''}>${t}</option>`
+              ).join('')}
+            </select>
+            <textarea id="edit-req-desc-${req.id}"
+                      placeholder="Description"
+                      rows="2">${escHtml(req.description)}</textarea>
+            <label style="display:flex; align-items:center; gap:0.4rem;
+                           font-size:0.8rem; margin-bottom:0.5rem; cursor:pointer;">
+              <input type="checkbox"
+                     id="edit-req-required-${req.id}"
+                     ${req.is_required ? 'checked' : ''}
+                     style="width:auto; margin:0;">
+              Required
+            </label>
+            <label style="display:flex; align-items:center; gap:0.4rem;
+                           font-size:0.8rem; margin-bottom:0.5rem; cursor:pointer;">
+              <input type="checkbox"
+                     id="edit-req-active-${req.id}"
+                     ${req.is_active ? 'checked' : ''}
+                     style="width:auto; margin:0;">
+              Active
+            </label>
+            <div class="inline-form-actions">
+              <button class="btn btn-sm btn-primary"
+                      onclick="saveRequirement(${req.id})">Save</button>
+              <button class="btn btn-sm btn-outline"
+                      onclick="toggleReqEdit(${req.id})">Cancel</button>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+  } else {
+    html += `
+      <div class="panel-empty" style="padding:1.5rem 1rem;">
+        No requirements yet.
+        <br>Click + Add above to create one.
+      </div>
+    `;
+  }
+
+  // Inherited section
+  if (inherited.length) {
+    html += `
+      <div class="inherited-section">
+        <div style="font-weight:600; margin-bottom:0.5rem; text-transform:uppercase;
+                    letter-spacing:0.06em; font-size:0.7rem;">
+          Inherited from parent categories
+        </div>
+        ${inherited.map(item => `
+          <div style="padding:0.35rem 0; border-bottom:1px solid var(--border);
+                      display:flex; justify-content:space-between;">
+            <span>${escHtml(item.req.name)}
+              <span class="type-badge">${item.req.type}</span>
+            </span>
+            <span style="font-size:0.75rem;">from ${escHtml(item.from_category.name)}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  container.innerHTML = html;
+}
+
+// ── Actions ────────────────────────────────────────────────────
+
+async function selectService(id, name) {
+  state.serviceId    = id;
+  state.serviceName  = name;
+  state.categoryId   = null;
+  state.categoryPath = [];
+
+  // Update service list UI
+  loadServices();
+
+  // Show + New category button
+  document.getElementById('btn-add-category').style.display = '';
+
+  // Update breadcrumb
+  const bc = document.getElementById('category-breadcrumb');
+  bc.style.display  = 'block';
+  bc.textContent    = name;
+
+  // Clear requirements panel
+  document.getElementById('requirements-list').innerHTML =
+    '<div class="panel-empty">Select a category to view its requirements.</div>';
+  document.getElementById('panel3-title').textContent    = 'Requirements';
+  document.getElementById('btn-add-requirement').style.display = 'none';
+
+  // Load top-level categories
+  const data = await apiGet(
+    `{% url 'admin_panel:ajax_get_categories' %}?service_id=${id}`
+  );
+  renderCategoryLevel(data.categories, 0, null);
+}
+
+async function selectCategory(id, name, depth, parentId) {
+  state.categoryId = id;
+
+  // Update path — truncate to current depth then add this
+  state.categoryPath = state.categoryPath.slice(0, depth);
+  state.categoryPath.push({ id, name });
+
+  // Update breadcrumb
+  const bc      = document.getElementById('category-breadcrumb');
+  const crumbs  = [state.serviceName, ...state.categoryPath.map(c => c.name)];
+  bc.textContent = crumbs.join(' › ');
+
+  // Refresh this level to show selection highlight
+  const levelData = await apiGet(
+    parentId
+      ? `{% url 'admin_panel:ajax_get_categories' %}?parent_id=${parentId}`
+      : `{% url 'admin_panel:ajax_get_categories' %}?service_id=${state.serviceId}`
+  );
+  renderCategoryLevel(levelData.categories, depth, parentId);
+
+  // Load subcategories for next level
+  const subData = await apiGet(
+    `{% url 'admin_panel:ajax_get_categories' %}?parent_id=${id}`
+  );
+  renderCategoryLevel(subData.categories, depth + 1, id);
+
+  // Load requirements for right panel
+  const detail = await apiGet(
+    `/admin-panel/ajax/builder/category/${id}/`
+  );
+  renderRequirements(detail.own_requirements, detail.inherited, name);
+}
+
+async function loadServices() {
+  const data = await apiGet(`{% url 'admin_panel:ajax_get_services' %}`);
+  renderServiceList(data.services);
+}
+
+// ── Create actions ─────────────────────────────────────────────
+
+async function createService() {
+  clearError('err-service-name');
+  const name = document.getElementById('new-service-name').value.trim();
+  const desc = document.getElementById('new-service-desc').value.trim();
+
+  const res = await apiPost(`{% url 'admin_panel:ajax_create_service' %}`, {
+    name, description: desc
+  });
+
+  if (!res.ok) {
+    showError('err-service-name', res.errors?.name?.[0] || 'Error creating service.');
+    return;
+  }
+
+  // Reset form, close it, reload list
+  document.getElementById('new-service-name').value = '';
+  document.getElementById('new-service-desc').value = '';
+  toggleForm('form-new-service');
+  loadServices();
+}
+
+async function createCategory() {
+  clearError('err-category-name');
+
+  if (!state.serviceId) {
+    showError('err-category-name', 'Select a service first.');
+    return;
+  }
+
+  const name      = document.getElementById('new-category-name').value.trim();
+  const desc      = document.getElementById('new-category-desc').value.trim();
+
+  // Parent = the deepest selected category, or null for top-level
+  const parentId  = state.categoryPath.length
+    ? state.categoryPath[state.categoryPath.length - 1].id
+    : null;
+
+  const res = await apiPost(`{% url 'admin_panel:ajax_create_category' %}`, {
+    name,
+    description: desc,
+    service_id:  state.serviceId,
+    parent_id:   parentId,
+  });
+
+  if (!res.ok) {
+    showError('err-category-name', res.errors?.name?.[0] || 'Error creating category.');
+    return;
+  }
+
+  // Reset form, close it
+  document.getElementById('new-category-name').value = '';
+  document.getElementById('new-category-desc').value = '';
+  toggleForm('form-new-category');
+
+  // Reload the level where the new category was created
+  const depth    = state.categoryPath.length;
+  const reloadId = parentId;
+
+  const data = reloadId
+    ? await apiGet(`{% url 'admin_panel:ajax_get_categories' %}?parent_id=${reloadId}`)
+    : await apiGet(`{% url 'admin_panel:ajax_get_categories' %}?service_id=${state.serviceId}`);
+
+  renderCategoryLevel(data.categories, depth, reloadId);
+}
+
+async function createRequirement() {
+  clearError('err-req-name');
+
+  if (!state.categoryId) {
+    showError('err-req-name', 'Select a category first.');
+    return;
+  }
+
+  const name        = document.getElementById('new-req-name').value.trim();
+  const type        = document.getElementById('new-req-type').value;
+  const desc        = document.getElementById('new-req-desc').value.trim();
+  const is_required = document.getElementById('new-req-required').checked;
+
+  const res = await apiPost(`{% url 'admin_panel:ajax_create_requirement' %}`, {
+    name, type, description: desc, is_required,
+    category_id: state.categoryId
+  });
+
+  if (!res.ok) {
+    const errMsg = res.errors?.name?.[0] || res.errors?.type?.[0] || 'Error creating requirement.';
+    showError('err-req-name', errMsg);
+    return;
+  }
+
+  // Reset form, close it, reload requirements
+  document.getElementById('new-req-name').value  = '';
+  document.getElementById('new-req-type').value  = '';
+  document.getElementById('new-req-desc').value  = '';
+  document.getElementById('new-req-required').checked = true;
+  toggleForm('form-new-requirement');
+
+  // Reload category detail
+  const detail = await apiGet(`/admin-panel/ajax/builder/category/${state.categoryId}/`);
+  renderRequirements(
+    detail.own_requirements,
+    detail.inherited,
+    state.categoryPath[state.categoryPath.length - 1]?.name || ''
+  );
+}
+
+// ── Edit requirement ──────────────────────────────────────────
+
+function toggleReqEdit(reqId) {
+  const form = document.getElementById(`req-edit-${reqId}`);
+  if (form) form.classList.toggle('open');
+}
+
+async function saveRequirement(reqId) {
+  clearError(`err-req-edit-${reqId}`);
+
+  const name        = document.getElementById(`edit-req-name-${reqId}`).value.trim();
+  const type        = document.getElementById(`edit-req-type-${reqId}`).value;
+  const desc        = document.getElementById(`edit-req-desc-${reqId}`).value.trim();
+  const is_required = document.getElementById(`edit-req-required-${reqId}`).checked;
+  const is_active   = document.getElementById(`edit-req-active-${reqId}`).checked;
+
+  const res = await apiPost(
+    `/admin-panel/ajax/builder/requirement/${reqId}/edit/`,
+    { name, type, description: desc, is_required, is_active }
+  );
+
+  if (!res.ok) {
+    const errMsg = res.errors?.name?.[0] || 'Error saving requirement.';
+    showError(`err-req-edit-${reqId}`, errMsg);
+    return;
+  }
+
+  // Reload requirements panel
+  const detail = await apiGet(`/admin-panel/ajax/builder/category/${state.categoryId}/`);
+  renderRequirements(
+    detail.own_requirements,
+    detail.inherited,
+    state.categoryPath[state.categoryPath.length - 1]?.name || ''
+  );
+}
+
+// ── Utility ────────────────────────────────────────────────────
+// Escapes HTML special chars to prevent XSS when inserting
+// user-provided content into innerHTML.
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── Init ───────────────────────────────────────────────────────
+// Load services when the page opens.
+loadServices();
+
+// ── Delete ───────────────────────────────────────────────────────
+async function deleteService(id) {
+  if (!confirm('Delete this service? All its categories will be deactivated.')) return;
+  const res = await apiPost(`/admin-panel/ajax/builder/service/${id}/delete/`, {});
+  if (res.ok) {
+    // If deleted service was selected, reset state
+    if (state.serviceId === id) {
+      state.serviceId    = null;
+      state.serviceName  = '';
+      state.categoryId   = null;
+      state.categoryPath = [];
+      // Clear panels
+      document.getElementById('category-chain-container').innerHTML =
+        '<div class="panel-empty" id="categories-empty">Select a service to view its categories.</div>';
+      document.getElementById('requirements-list').innerHTML =
+        '<div class="panel-empty">Select a category to view its requirements.</div>';
+      document.getElementById('btn-add-category').style.display     = 'none';
+      document.getElementById('btn-add-requirement').style.display  = 'none';
+      document.getElementById('category-breadcrumb').style.display  = 'none';
+    }
+    loadServices();
+  }
+}
+
+async function deleteCategory(id, depth, parentId) {
+  if (!confirm('Delete this category? Its subcategories and requirements will also be deactivated.')) return;
+  const res = await apiPost(`/admin-panel/ajax/builder/category/${id}/delete/`, {});
+  if (res.ok) {
+    // If deleted category was selected, clear requirements panel
+    if (state.categoryId === id) {
+      state.categoryId   = null;
+      state.categoryPath = state.categoryPath.slice(0, depth);
+      document.getElementById('requirements-list').innerHTML =
+        '<div class="panel-empty">Select a category to view its requirements.</div>';
+      document.getElementById('btn-add-requirement').style.display = 'none';
+    }
+    // Reload this level
+    const data = parentId
+      ? await apiGet(`{% url 'admin_panel:ajax_get_categories' %}?parent_id=${parentId}`)
+      : await apiGet(`{% url 'admin_panel:ajax_get_categories' %}?service_id=${state.serviceId}`);
+    renderCategoryLevel(data.categories, depth, parentId);
+  }
+}
+
+async function deleteRequirement(id) {
+  if (!confirm('Delete this requirement? It will be hidden from new cases but existing cases keep it.')) return;
+  const res = await apiPost(`/admin-panel/ajax/builder/requirement/${id}/delete/`, {});
+  if (res.ok) {
+    const detail = await apiGet(`/admin-panel/ajax/builder/category/${state.categoryId}/`);
+    renderRequirements(
+      detail.own_requirements,
+      detail.inherited,
+      state.categoryPath[state.categoryPath.length - 1]?.name || ''
+    );
+  }
+}
+</script>
+{% endblock %}

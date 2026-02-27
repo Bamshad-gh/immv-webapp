@@ -1,0 +1,67 @@
+
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/user_balance_overview.html
+Context from view:
+  user_balances — list of dicts:
+    { user, total_owed, invoice_count }
+  Sorted highest balance first by the view.
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}User Balances{% endblock %}
+{% block topbar_title %}Outstanding Balances{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Outstanding Balances</h1>
+    <p class="page-subtitle">
+      Users with unpaid invoices — highest balance first.
+    </p>
+  </div>
+  <a href="{% url 'admin_panel:invoice_create' %}" class="btn btn-primary">
+    + New Invoice
+  </a>
+</div>
+
+<div class="card">
+  {% if user_balances %}
+    <table>
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Open Invoices</th>
+          <th>Total Owed</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in user_balances %}
+          <tr>
+            <td>
+              <a href="{% url 'admin_panel:admin_view_user' item.user.id %}"
+                 style="font-weight:500; color:var(--navy); text-decoration:none;">
+                {{ item.user.email }}
+              </a>
+            </td>
+            <td class="text-muted">{{ item.invoice_count }}</td>
+            <td style="font-weight:700; color:var(--danger); font-size:1rem;">
+              ${{ item.total_owed }}
+            </td>
+            <td>
+              <a href="{% url 'admin_panel:invoice_list' %}?email={{ item.user.email }}"
+                 class="btn btn-sm btn-outline">
+                View Invoices
+              </a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">
+      <p class="empty-state-title">All clear</p>
+      <p class="text-muted">No users with outstanding balances.</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

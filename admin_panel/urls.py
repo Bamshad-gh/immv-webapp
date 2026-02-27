@@ -69,7 +69,99 @@ urlpatterns = [
     path('ajax/subcategories/', views.get_subcategories, name='get_subcategories'),
     
     
+        # ── Service Builder ───────────────────────────────────────
+    path('services/',
+         views.service_list,
+         name='service_list'),
+
+    path('builder/',
+         views.service_builder,
+         name='service_builder'),
+
+    # AJAX endpoints — all prefixed /ajax/builder/
+    # These return JSON, not HTML
+    path('ajax/builder/services/',
+         views.ajax_get_services,
+         name='ajax_get_services'),
+
+    path('ajax/builder/service/create/',
+         views.ajax_create_service,
+         name='ajax_create_service'),
+
+    path('ajax/builder/categories/',
+         views.ajax_get_categories,
+         name='ajax_get_categories'),
+
+    path('ajax/builder/category/create/',
+         views.ajax_create_category,
+         name='ajax_create_category'),
+
+    path('ajax/builder/category/<int:category_id>/',
+         views.ajax_get_category_detail,
+         name='ajax_get_category_detail'),
+
+    path('ajax/builder/category/<int:category_id>/edit/',
+         views.ajax_edit_category,
+         name='ajax_edit_category'),
+
+    path('ajax/builder/requirement/create/',
+         views.ajax_create_requirement,
+         name='ajax_create_requirement'),
+
+    path('ajax/builder/requirement/<int:requirement_id>/edit/',
+         views.ajax_edit_requirement,
+         name='ajax_edit_requirement'),
+    
+    path('ajax/builder/service/<int:service_id>/delete/',
+     views.ajax_delete_service,
+     name='ajax_delete_service'),
+
+path('ajax/builder/category/<int:category_id>/delete/',
+     views.ajax_delete_category,
+     name='ajax_delete_category'),
+
+path('ajax/builder/requirement/<int:requirement_id>/delete/',
+     views.ajax_delete_requirement,
+     name='ajax_delete_requirement'),
+
+    # ── Tasks ─────────────────────────────────────────────────
+    path('tasks/',
+         views.task_list,
+         name='task_list'),
+
+    path('tasks/create/',
+         views.task_create,
+         name='task_create'),
+
+    path('tasks/<int:task_id>/',
+         views.task_detail,
+         name='task_detail'),
+
+    # ── Payments ──────────────────────────────────────────────
+    path('invoices/',
+         views.invoice_list,
+         name='invoice_list'),
+
+    path('invoices/create/',
+         views.invoice_create,
+         name='invoice_create'),
+
+    path('invoices/<int:invoice_id>/',
+         views.invoice_detail,
+         name='invoice_detail'),
+
+    path('payments/overview/',
+         views.user_balance_overview,
+         name='user_balance_overview'),
+    
+    
+    
+    # ______ delet tasks or invoices
+    path('tasks/<int:task_id>/delete/', views.task_delete, name='task_delete'),
+    path('invoices/<int:invoice_id>/delete/', views.invoice_delete, name='invoice_delete'),
+    
+    
 
     
 
-]
+                        ]

@@ -1,0 +1,142 @@
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/task_list.html
+Context from view:
+  tasks          — queryset of Task objects
+  status_choices — Task.STATUS_CHOICES
+  type_choices   — Task.TYPE_CHOICES
+  status_filter  — current status filter value or None
+  type_filter    — current type filter value or None
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Tasks{% endblock %}
+{% block topbar_title %}Tasks{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Tasks</h1>
+    <p class="page-subtitle">Assign and track work across your team and users.</p>
+  </div>
+  <a href="{% url 'admin_panel:task_create' %}" class="btn btn-primary">+ Create Task</a>
+</div>
+
+{# Filter bar — each link adds a query param, view handles filtering #}
+<div style="display:flex; gap:0.5rem; margin-bottom:1rem; flex-wrap:wrap;">
+  <a href="{% url 'admin_panel:task_list' %}"
+     class="btn btn-sm {% if not status_filter and not type_filter %}btn-primary{% else %}btn-outline{% endif %}">
+    All
+  </a>
+  <a href="?status=pending"
+     class="btn btn-sm {% if status_filter == 'pending' %}btn-primary{% else %}btn-outline{% endif %}">
+    Pending
+  </a>
+  <a href="?status=in_progress"
+     class="btn btn-sm {% if status_filter == 'in_progress' %}btn-primary{% else %}btn-outline{% endif %}">
+    In Progress
+  </a>
+  <a href="?status=completed"
+     class="btn btn-sm {% if status_filter == 'completed' %}btn-primary{% else %}btn-outline{% endif %}">
+    Completed
+  </a>
+  <span style="width:1px; background:var(--border); margin:0 0.25rem;"></span>
+  <a href="?type=admin_to_user"
+     class="btn btn-sm {% if type_filter == 'admin_to_user' %}btn-primary{% else %}btn-outline{% endif %}">
+    → Users
+  </a>
+  <a href="?type=admin_to_admin"
+     class="btn btn-sm {% if type_filter == 'admin_to_admin' %}btn-primary{% else %}btn-outline{% endif %}">
+    → Admins
+  </a>
+</div>
+
+<div class="card">
+  {% if tasks %}
+    <table>
+      <thead>
+        <tr>
+          <th>Task</th>
+          <th>Type</th>
+          <th>Assigned To</th>
+          <th>Due</th>
+          <th>Status</th>
+          <th>Case</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for task in tasks %}
+          <tr>
+            <td>
+              <a href="{% url 'admin_panel:task_detail' task.id %}"
+                 style="font-weight:500; color:var(--navy); text-decoration:none;">
+                {{ task.title }}
+              </a>
+              {% if task.description %}
+                <div class="text-muted text-small">{{ task.description|truncatechars:50 }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge badge-neutral" style="font-size:0.65rem;">
+                {{ task.get_task_type_display }}
+              </span>
+            </td>
+            <td>
+                {% if task.assigned_to_user %}
+                    <a href="{% url 'admin_panel:admin_view_user' task.assigned_to_user.id %}"
+                    style="color:var(--amber); text-decoration:none;">
+                    {{ task.assigned_to_user.email }}
+                    </a>
+                {% elif task.assigned_to_admin %}
+                    {{ task.assigned_to_admin.user.email }}
+                    <span class="badge badge-neutral" style="font-size:0.6rem;">admin</span>
+                {% else %}
+                    <span class="text-muted">—</span>
+                {% endif %}
+            </td>
+              {% if task.due_date %}
+                <span {% if task.is_overdue %}style="color:var(--danger); font-weight:600;"{% endif %}>
+                  {{ task.due_date|date:"M d, Y" }}
+                  {% if task.is_overdue %}⚠{% endif %}
+                </span>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
+            </td>
+            <td>
+              {% if task.linked_case %}
+                <a href="{% url 'admin_panel:case_detail' task.linked_case.id %}"
+                   style="color:var(--amber); text-decoration:none; font-size:0.85rem;">
+                  Case #{{ task.linked_case.id }}
+                </a>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              <td style="display:flex; gap:0.4rem;">
+                <a href="{% url 'admin_panel:task_detail' task.id %}"
+                    class="btn btn-sm btn-outline">Open</a>
+                <form method="POST" action="{% url 'admin_panel:task_delete' task.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-danger"
+                            onclick="return confirm('Delete this task?')">Delete</button>
+                </form>
+                </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">
+      <p class="empty-state-title">No tasks</p>
+      <p class="text-muted">Create a task to assign work to users or admins.</p>
+      <div style="margin-top:1.25rem;">
+        <a href="{% url 'admin_panel:task_create' %}" class="btn btn-primary">+ Create Task</a>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

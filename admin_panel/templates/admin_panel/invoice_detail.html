@@ -1,0 +1,201 @@
+
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/invoice_detail.html
+Context from view:
+  invoice    — Invoice object
+  payments   — queryset of Payment objects for this invoice
+  total_paid — Decimal total paid
+  balance    — Decimal amount still owed
+  is_paid    — bool
+  is_overdue — bool
+Note: payment.recorded_by, payment.recorded_at, payment.note,
+      payment.amount are direct fields on the Payment model.
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Invoice #{{ invoice.id }}{% endblock %}
+{% block topbar_title %}Invoice Detail{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ invoice.title }}</h1>
+    <p class="page-subtitle">
+      {{ invoice.user.email }}
+      {% if invoice.due_date %}· Due {{ invoice.due_date|date:"M d, Y" }}{% endif %}
+    </p>
+  </div>
+  {% if is_paid %}
+    <span class="badge badge-active"
+          style="font-size:0.8rem; padding:0.4rem 0.9rem;">Paid ✓</span>
+  {% elif is_overdue %}
+    <span class="badge badge-rejected"
+          style="font-size:0.8rem; padding:0.4rem 0.9rem;">Overdue ⚠</span>
+  {% else %}
+    <span class="badge badge-pending"
+          style="font-size:0.8rem; padding:0.4rem 0.9rem;">Unpaid</span>
+  {% endif %}
+</div>
+
+<div style="display:grid; grid-template-columns:2fr 1fr; gap:1rem; align-items:start;">
+
+  {# Left — payment history + record payment form #}
+  <div>
+    <div class="card">
+      <div class="card-header">Payment History</div>
+
+      {% if payments %}
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Amount</th>
+              <th>Note</th>
+              <th>Recorded by</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for payment in payments %}
+              <tr>
+                <td class="text-muted">
+                  {{ payment.marked_at|date:"M d, Y H:i" }}
+                </td>
+                <td style="font-weight:600;
+                     {% if payment.amount < 0 %}color:var(--danger);
+                     {% else %}color:var(--success);{% endif %}">
+                  ${{ payment.amount }}
+                </td>
+                <td class="text-muted text-small">
+                  {{ payment.notes|default:"—" }}
+
+                </td>
+                <td class="text-muted text-small">
+                  {{ payment.marked_by.email|default:"—" }}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <div class="empty-state" style="padding:2rem;">
+          <p class="empty-state-title">No payments yet</p>
+          <p class="text-muted">Use the form on the right to record a payment.</p>
+        </div>
+      {% endif %}
+    </div>
+
+    {# Record payment form — hidden when fully paid #}
+    {% if not is_paid %}
+      <div class="card" style="margin-top:1rem;">
+        <div class="card-header">Record Payment</div>
+        <form method="POST">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="record_payment">
+
+          <div style="display:grid; grid-template-columns:1fr 2fr; gap:0.75rem;">
+            <div class="form-group" style="margin:0;">
+              <label>Amount ($)</label>
+              <input type="number" name="amount"
+                     step="0.01" min="0.01"
+                     placeholder="{{ balance }}"
+                     required>
+              <p class="text-muted text-small mt-1">
+                Balance: ${{ balance }}
+              </p>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label>
+                Note
+                <span style="font-weight:400; text-transform:none;">(optional)</span>
+              </label>
+              <input type="text" name="note"
+                     placeholder="e.g. Bank transfer, Cash...">
+            </div>
+          </div>
+
+          <div style="margin-top:0.75rem;">
+            <button type="submit" class="btn btn-primary">
+              Record Payment
+            </button>
+          </div>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+
+  {# Right — summary card #}
+  <div>
+    <div class="card">
+      <div class="card-header">Summary</div>
+
+      {# Progress bar #}
+      {% if invoice.amount > 0 %}
+        <div style="margin-bottom:1.25rem;">
+          <div style="display:flex; justify-content:space-between;
+                      font-size:0.8rem; margin-bottom:0.4rem;">
+            <span class="text-muted">Progress</span>
+            <span>${{ total_paid }} / ${{ invoice.amount }}</span>
+          </div>
+          <div style="background:var(--border); height:6px;">
+            <div style="background:var(--amber); height:100%;
+                        width:{% widthratio total_paid invoice.amount 100 %}%;
+                        max-width:100%;">
+            </div>
+          </div>
+        </div>
+      {% endif %}
+
+      <table style="font-size:0.9rem; width:100%;">
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Total</td>
+          <td style="padding:0.4rem 0; font-weight:600;">${{ invoice.amount }}</td>
+        </tr>
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Paid</td>
+          <td style="padding:0.4rem 0; color:var(--success);">${{ total_paid }}</td>
+        </tr>
+        <tr style="border-top:2px solid var(--border);">
+          <td style="padding:0.6rem 0.5rem 0.4rem 0; font-weight:600;">Balance</td>
+          <td style="padding:0.6rem 0 0.4rem 0; font-weight:700; font-size:1.1rem;
+               {% if balance > 0 %}color:var(--danger);
+               {% else %}color:var(--success);{% endif %}">
+            ${{ balance }}
+          </td>
+        </tr>
+      </table>
+
+      <div class="divider"></div>
+
+      <table style="font-size:0.85rem; width:100%;">
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">User</td>
+          <td style="padding:0.4rem 0;">
+            <a href="{% url 'admin_panel:admin_view_user' invoice.user.id %}"
+               style="color:var(--amber); text-decoration:none;">
+              {{ invoice.user.email }}
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Created</td>
+          <td style="padding:0.4rem 0;">{{ invoice.created_at|date:"M d, Y" }}</td>
+        </tr>
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">By</td>
+          <td style="padding:0.4rem 0;">{{ invoice.created_by.email|default:"—" }}</td>
+        </tr>
+        {% if invoice.description %}
+          <tr>
+            <td class="text-muted"
+                style="padding:0.4rem 0.5rem 0.4rem 0; vertical-align:top;">
+              Notes
+            </td>
+            <td style="padding:0.4rem 0; word-break:break-word; white-space:pre-wrap;">
+              {{ invoice.description }}
+            </td>
+          </tr>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

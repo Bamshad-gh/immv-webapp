@@ -1,0 +1,86 @@
+
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/invoice_create.html
+Context from view:
+  errors — dict of field: error string
+  users  — queryset for autocomplete hint (not a dropdown — too many users)
+  post   — request.POST for re-filling on error
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Create Invoice{% endblock %}
+{% block topbar_title %}Create Invoice{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Create Invoice</h1>
+  <a href="{% url 'admin_panel:invoice_list' %}" class="btn btn-outline">← Invoices</a>
+</div>
+
+<div class="card" style="max-width:560px;">
+  <form method="POST">
+    {% csrf_token %}
+
+    <div class="form-group">
+      <label>User Email</label>
+      <input type="text" name="user_email"
+             value="{{ post.user_email|default:'' }}"
+             placeholder="user@example.com" required>
+      {% if errors.user_email %}
+        <p style="color:var(--danger); font-size:0.8rem; margin-top:0.25rem;">
+          {{ errors.user_email }}
+        </p>
+      {% endif %}
+    </div>
+
+    <div class="form-group">
+      <label>Invoice Title</label>
+      <input type="text" name="title"
+             value="{{ post.title|default:'' }}"
+             placeholder="e.g. Work Permit Application Fee" required>
+      {% if errors.title %}
+        <p style="color:var(--danger); font-size:0.8rem; margin-top:0.25rem;">
+          {{ errors.title }}
+        </p>
+      {% endif %}
+    </div>
+
+    <div class="form-group">
+      <label>
+        Description
+        <span style="font-weight:400; text-transform:none;">(optional — shown to user)</span>
+      </label>
+      <textarea name="description" rows="3"
+                placeholder="Details about this invoice...">{{ post.description|default:'' }}</textarea>
+    </div>
+
+    <div class="form-group">
+      <label>Amount ($)</label>
+      <input type="number" name="amount"
+             step="0.01" min="0.01"
+             value="{{ post.amount|default:'' }}"
+             placeholder="0.00" required>
+      {% if errors.amount %}
+        <p style="color:var(--danger); font-size:0.8rem; margin-top:0.25rem;">
+          {{ errors.amount }}
+        </p>
+      {% endif %}
+    </div>
+
+    <div class="form-group">
+      <label>
+        Due Date
+        <span style="font-weight:400; text-transform:none;">(optional)</span>
+      </label>
+      <input type="date" name="due_date"
+             value="{{ post.due_date|default:'' }}">
+    </div>
+
+    <div class="divider"></div>
+    <div class="flex-between">
+      <a href="{% url 'admin_panel:invoice_list' %}" class="btn btn-outline">Cancel</a>
+      <button type="submit" class="btn btn-primary">Create Invoice</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+

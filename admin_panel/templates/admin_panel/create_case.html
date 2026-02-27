@@ -61,31 +61,39 @@ EXPAND: add group/managed_profile selection if needed.
 {% endblock %}
 {% block extra_js %}
 <script>
-// ── Infinite category chain ───────────────────────────────
-  // Each time admin selects a category, fetch its children.
-  // If children exist → add a new dropdown below.
-  // If no children → this is the final level (used for the case).
-  // The last selected value is always sent as 'category' on submit.
+  // ── Infinite category chain ────────────────────────────────────
+  // Flow: service selected → fetch top-level categories → show dropdown
+  //       category selected → set hidden value → fetch children → show next dropdown
+  //       hidden field always holds the LAST selected category id on submit
+  //
+  // Why restore after addDropdown?
+  //   addDropdown calls removeDropdownsAfter which clears the hidden field
+  //   but we still want the parent category value if it has children
+  //   so we restore it immediately after
 
   const serviceSelect  = document.getElementById('id_service');
   const chainContainer = document.getElementById('category-chain');
-
-  // Track all created dropdowns so we can remove deeper ones when going back
   let dropdowns = [];
 
   function removeDropdownsAfter(index) {
-    // When admin changes a dropdown, remove all dropdowns below it
+    // Remove all dropdowns deeper than index
     while (dropdowns.length > index) {
       const el = dropdowns.pop();
       el.remove();
     }
-    // Clear the hidden final value
-    document.querySelector('input[name="final_category"]').value = '';
-
+    // Only clear hidden value when resetting from the top
+    // not when just adding a deeper level
+    if (index === 0) {
+      document.querySelector('input[name="final_category"]').value = '';
+    }
   }
 
   function addDropdown(categories, depth) {
-    removeDropdownsAfter(depth);
+    // Remove any dropdowns deeper than current depth first
+    while (dropdowns.length > depth) {
+      const el = dropdowns.pop();
+      el.remove();
+    }
 
     const wrapper = document.createElement('div');
     wrapper.className = 'form-group';
@@ -107,28 +115,36 @@ EXPAND: add group/managed_profile selection if needed.
 
     select.addEventListener('change', function() {
       const catId = this.value;
-      if (!catId) {
-        removeDropdownsAfter(depth + 1);
-        document.querySelector('input[name="final_category"]').value = '';
 
+      if (!catId) {
+        // User selected the empty option — clear deeper dropdowns and value
+        while (dropdowns.length > depth + 1) {
+          dropdowns.pop().remove();
+        }
+        document.querySelector('input[name="final_category"]').value = '';
         return;
       }
 
-      // This is now the current final selection
+      // Always set hidden value immediately — this is the current selection
       document.querySelector('input[name="final_category"]').value = catId;
 
-
-      // Fetch children of this category
+      // Fetch children to see if we need another dropdown level
       fetch(`{% url 'admin_panel:get_subcategories' %}?category_id=${catId}`)
         .then(r => r.json())
         .then(data => {
           if (data.subcategories.length > 0) {
-            // Has children — add another dropdown
             addDropdown(data.subcategories, depth + 1);
           } else {
-            // No children — this is the final level, remove any deeper dropdowns
-            removeDropdownsAfter(depth + 1);
+            // No children — remove any stale deeper dropdowns
+            while (dropdowns.length > depth + 1) {
+              dropdowns.pop().remove();
+            }
           }
+          // Restore value — addDropdown may have wiped it
+          document.querySelector('input[name="final_category"]').value = catId;
+        })
+        .catch(() => {
+          // Fetch failed — value already set, nothing to do
         });
     });
 
@@ -137,7 +153,7 @@ EXPAND: add group/managed_profile selection if needed.
     dropdowns.push(wrapper);
   }
 
-  // When service changes — reset everything and load top-level categories
+  // Service change — reset everything and load top-level categories
   serviceSelect.addEventListener('change', function() {
     removeDropdownsAfter(0);
     const serviceId = this.value;
@@ -149,7 +165,14 @@ EXPAND: add group/managed_profile selection if needed.
         if (data.categories.length > 0) {
           addDropdown(data.categories, 0);
         }
-      });
+      })
+      .catch(() => {});
+  });
+
+  // Confirm value on submit — last safety check
+  document.getElementById('create-case-form').addEventListener('submit', function() {
+    const val = document.querySelector('input[name="final_category"]').value;
+    console.log('Submitting with final_category:', val);
   });
 </script>
 {% endblock %}

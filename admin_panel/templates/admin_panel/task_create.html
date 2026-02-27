@@ -1,0 +1,137 @@
+
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/task_create.html
+Context from view:
+  errors        — dict of field: error message
+  all_users     — all active users for the dropdown
+  all_cases     — last 50 active cases for optional link
+  type_choices  — Task.TYPE_CHOICES
+  post          — request.POST for re-filling form on error
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Create Task{% endblock %}
+{% block topbar_title %}Create Task{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Create Task</h1>
+  <a href="{% url 'admin_panel:task_list' %}" class="btn btn-outline">← Tasks</a>
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; align-items:start;">
+  <div class="card">
+    <form method="POST">
+      {% csrf_token %}
+
+      <div class="form-group">
+        <label>Task Type</label>
+        <select name="type" required>
+          <option value="">Select type...</option>
+          {% for value, label in type_choices %}
+            <option value="{{ value }}"
+              {% if post.type == value %}selected{% endif %}>
+              {{ label }}
+            </option>
+          {% endfor %}
+        </select>
+        {% if errors.type %}
+          <p style="color:var(--danger); font-size:0.8rem; margin-top:0.25rem;">
+            {{ errors.type }}
+          </p>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label>Title</label>
+        <input type="text" name="title"
+               value="{{ post.title|default:'' }}"
+               placeholder="e.g. Upload passport copy for Case #5"
+               required>
+        {% if errors.title %}
+          <p style="color:var(--danger); font-size:0.8rem; margin-top:0.25rem;">
+            {{ errors.title }}
+          </p>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label>
+          Description
+          <span style="font-weight:400; text-transform:none;">(optional)</span>
+        </label>
+        <textarea name="description" rows="4"
+                  placeholder="Explain what needs to be done...">{{ post.description|default:'' }}</textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Assign To</label>
+        <select name="assigned_to" required>
+          <option value="">Select person...</option>
+          {% for user in all_users %}
+            <option value="{{ user.id }}"
+              {% if post.assigned_to == user.id|stringformat:'s' %}selected{% endif %}>
+              {{ user.email }}{% if user.is_staff %} (admin){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+        {% if errors.assigned_to %}
+          <p style="color:var(--danger); font-size:0.8rem; margin-top:0.25rem;">
+            {{ errors.assigned_to }}
+          </p>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label>
+          Due Date
+          <span style="font-weight:400; text-transform:none;">(optional)</span>
+        </label>
+        <input type="date" name="due_date"
+               value="{{ post.due_date|default:'' }}">
+      </div>
+
+      <div class="form-group">
+        <label>
+          Link to Case
+          <span style="font-weight:400; text-transform:none;">(optional)</span>
+        </label>
+        <select name="linked_case">
+          <option value="">No case link</option>
+          {% for case in all_cases %}
+            <option value="{{ case.id }}"
+              {% if post.linked_case == case.id|stringformat:'s' %}selected{% endif %}>
+              Case #{{ case.id }} — {{ case.user.email }} — {{ case.category.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="divider"></div>
+      <div class="flex-between">
+        <a href="{% url 'admin_panel:task_list' %}" class="btn btn-outline">Cancel</a>
+        <button type="submit" class="btn btn-primary">Create Task</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="card-header">How Tasks Work</div>
+    <div style="font-size:0.875rem; color:var(--slate); line-height:1.8;">
+      <p>
+        <strong>Admin → User</strong> — user receives a notification
+        and sees the task on their dashboard. Use this to ask users
+        to fill requirements, upload documents, or provide information.
+      </p>
+      <p style="margin-top:0.75rem;">
+        <strong>Admin → Admin</strong> — your team member receives
+        a notification in their admin panel. Use this to delegate
+        work like reviewing a case or contacting a user.
+      </p>
+      <p style="margin-top:0.75rem;">
+        Linking to a case lets both sides see the context and
+        navigate directly to it.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

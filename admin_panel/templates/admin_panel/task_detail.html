@@ -1,0 +1,162 @@
+
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/task_detail.html
+Context from view:
+  task           — Task object
+  status_choices — Task.STATUS_CHOICES
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Task: {{ task.title }}{% endblock %}
+{% block topbar_title %}Task Detail{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ task.title }}</h1>
+    <p class="page-subtitle">
+  {{ task.get_task_type_display }}
+  · Assigned to
+  {% if task.assigned_to_user %}
+    <a href="{% url 'admin_panel:admin_view_user' task.assigned_to_user.id %}"
+       style="color:var(--amber); text-decoration:none;">
+      {{ task.assigned_to_user.email }}
+    </a>
+  {% elif task.assigned_to_admin %}
+    {{ task.assigned_to_admin.user.email }}
+    <span class="badge badge-neutral" style="font-size:0.65rem;">admin</span>
+  {% endif %}
+      {% if task.due_date %}· Due {{ task.due_date|date:"M d, Y" }}{% endif %}
+    </p>
+  </div>
+  <span class="badge badge-{{ task.status }}"
+        style="font-size:0.8rem; padding:0.4rem 0.9rem;">
+    {{ task.status }}
+    {% if task.is_overdue %} ⚠ Overdue{% endif %}
+  </span>
+</div>
+
+<div style="display:grid; grid-template-columns:2fr 1fr; gap:1rem; align-items:start;">
+
+  <div>
+    <div class="card">
+      <div class="card-header">Description</div>
+      <div style="padding:0.5rem 0; font-size:0.9rem; line-height:1.75;
+                  white-space:pre-wrap; word-break:break-word; color:var(--navy);">
+        {% if task.description %}
+          {{ task.description }}
+        {% else %}
+          <em class="text-muted">No description provided.</em>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if task.linked_case %}
+      <div class="card" style="margin-top:1rem;">
+        <div class="card-header">Linked Case</div>
+        <div style="padding:0.5rem 0;">
+          <a href="{% url 'admin_panel:case_detail' task.linked_case.id %}"
+             style="color:var(--amber); font-weight:500; text-decoration:none;">
+            Case #{{ task.linked_case.id }} — {{ task.linked_case.category.name }}
+          </a>
+          <span class="text-muted"> · {{ task.linked_case.user.email }}</span>
+          <span class="badge badge-{{ task.linked_case.status }}"
+                style="margin-left:0.5rem; font-size:0.65rem;">
+            {{ task.linked_case.status }}
+          </span>
+        </div>
+      </div>
+    {% endif %}
+
+    {# Edit task #}
+    <div class="card" style="margin-top:1rem;">
+      <div class="card-header">Edit Task</div>
+      <form method="POST">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_task">
+
+        <div class="form-group">
+          <label>Title</label>
+          <input type="text" name="title" value="{{ task.title }}">
+        </div>
+
+        <div class="form-group">
+          <label>Description</label>
+          <textarea name="description" rows="4">{{ task.description }}</textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Due Date</label>
+          <input type="date" name="due_date"
+                 value="{{ task.due_date|date:'Y-m-d'|default:'' }}">
+        </div>
+
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </form>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-header">Update Status</div>
+      <form method="POST">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_status">
+        <div class="form-group" style="margin-bottom:0.75rem;">
+          <select name="status">
+            {% for value, label in status_choices %}
+              <option value="{{ value }}"
+                {% if task.status == value %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary"
+                style="width:100%; justify-content:center;">
+          Update
+        </button>
+      </form>
+    </div>
+
+    <div class="card" style="margin-top:1rem;">
+      <div class="card-header">Task Info</div>
+      <table style="font-size:0.85rem; width:100%;">
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Created by</td>
+          <td style="padding:0.4rem 0;">{{ task.created_by.email|default:"—" }}</td>
+        </tr>
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Assigned to</td>
+          <td style="padding:0.4rem 0;">
+            {% if task.assigned_to_user %}
+                {{ task.assigned_to_user.email }}
+            {% elif task.assigned_to_admin %}
+                {{ task.assigned_to_admin.user.email }}
+                <span class="badge badge-neutral" style="font-size:0.65rem;">admin</span>
+            {% endif %}
+            </td>
+        </tr>
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Type</td>
+          <td style="padding:0.4rem 0;">{{ task.get_type_display }}</td>
+        </tr>
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Created</td>
+          <td style="padding:0.4rem 0;">{{ task.created_at|date:"M d, Y" }}</td>
+        </tr>
+        <tr>
+          <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Due</td>
+          <td style="padding:0.4rem 0;">
+            {% if task.due_date %}
+              <span {% if task.is_overdue %}style="color:var(--danger);"{% endif %}>
+                {{ task.due_date|date:"M d, Y" }}
+                {% if task.is_overdue %} ⚠{% endif %}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

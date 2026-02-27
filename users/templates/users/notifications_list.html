@@ -1,0 +1,64 @@
+
+<!-- ============================================================
+FILE: cases/templates/cases/user_notifications.html
+User notification inbox — unread tasks highlighted.
+EXPAND: add notification_type icons for different alert types.
+============================================================ -->
+{% extends "base.html" %}
+{% block title %}Notifications{% endblock %}
+
+{% block content %}
+<div style="max-width:640px; margin:2rem auto; padding:0 1rem;">
+  <div style="display:flex; justify-content:space-between; align-items:center;
+              margin-bottom:1.5rem;">
+    <h1>Notifications</h1>
+    {% if unread_count %}
+      <form method="POST" action="{% url 'cases:mark_all_read' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline btn-sm">Mark all read</button>
+      </form>
+    {% endif %}
+  </div>
+
+  {% if notifications %}
+    {% for notif in notifications %}
+      <div style="padding:1rem;
+                  border:1px solid var(--border);
+                  margin-bottom:0.75rem;
+                  background:{% if not notif.is_read %}#fffbeb{% else %}var(--white){% endif %};">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <div>
+            <div style="font-weight:{% if not notif.is_read %}600{% else %}400{% endif %};">
+              {{ notif.message }}
+            </div>
+            {% if notif.task %}
+              <div class="text-muted text-small mt-1">
+                Due: {{ notif.task.due_date|date:"M d, Y"|default:"No due date" }}
+                {% if notif.task.related_case %} · Case #{{ notif.task.related_case.id }}{% endif %}
+              </div>
+              {% if notif.task.description %}
+                <div class="text-muted text-small mt-1">{{ notif.task.description }}</div>
+              {% endif %}
+            {% endif %}
+          </div>
+          <div style="text-align:right; flex-shrink:0; margin-left:1rem;">
+            <div class="text-muted text-small">{{ notif.created_at|date:"M d, Y" }}</div>
+            {% if not notif.is_read %}
+              <form method="POST"
+                    action="{% url 'cases:mark_notification_read' notif.id %}"
+                    style="margin-top:0.4rem;">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline">Mark read</button>
+              </form>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div style="text-align:center; color:var(--slate); padding:3rem 0;">
+      <p style="font-size:1.1rem;">No notifications</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

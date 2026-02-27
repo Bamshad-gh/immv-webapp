@@ -286,6 +286,23 @@ EXPAND: add a notifications section in the sidebar.
       <ul class="sidebar-nav">
         <li><a href="{% url 'admin_panel:admin_dashboard' %}">Dashboard</a></li>
       </ul>
+      {#tasks#}
+      {% if is_super or admin_profile.can_manage_tasks %}
+      <div class="sidebar-label">Tasks</div>
+      <ul class="sidebar-nav">
+        <li><a href="{% url 'admin_panel:task_list' %}">All Tasks</a></li>
+        <li><a href="{% url 'admin_panel:task_create' %}">Create Task</a></li>
+      </ul>
+    {% endif %}
+      {#invoices#}
+    {% if is_super or admin_profile.can_manage_payments %}
+      <div class="sidebar-label">Payments</div>
+      <ul class="sidebar-nav">
+        <li><a href="{% url 'admin_panel:invoice_list' %}">Invoices</a></li>
+        <li><a href="{% url 'admin_panel:invoice_create' %}">Create Invoice</a></li>
+        <li><a href="{% url 'admin_panel:user_balance_overview' %}">Balances</a></li>
+      </ul>
+    {% endif %}
 
       {# Users section — superuser or admin with can_create_users #}
       {% if is_super or ap.can_create_users %}
@@ -303,6 +320,14 @@ EXPAND: add a notifications section in the sidebar.
           <li><a href="{% url 'admin_panel:case_list' %}">All Cases</a></li>
           <li><a href="{% url 'admin_panel:create_case' %}">Create Case</a></li>
         </ul>
+      {% endif %}
+        {# service builder #}
+      {% if is_super or admin_profile.can_manage_content %}
+        <div class="sidebar-label">Service Builder</div>
+        <ul class="sidebar-nav">
+          <li><a href="{% url 'admin_panel:service_list' %}">All Services</a></li>
+          <li><a href="{% url 'admin_panel:service_builder' %}">Builder</a></li>
+      </ul>
       {% endif %}
 
       {# Groups section — superuser or admin with can_create_groups #}

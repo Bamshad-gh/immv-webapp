@@ -1,0 +1,74 @@
+
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/invoice_form.html
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block topbar_title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">{{ title }}</h1>
+  <a href="{% url 'admin_panel:invoice_list' %}" class="btn btn-outline">← Invoices</a>
+</div>
+
+<div class="card" style="max-width:540px;">
+  <form method="POST">
+    {% csrf_token %}
+
+    <div class="form-group">
+      <label>User Email</label>
+      {{ form.user_email }}
+      {{ form.user_email.errors }}
+      <p class="text-muted text-small mt-1">User must already have an account.</p>
+    </div>
+
+    <div class="form-group">
+      <label>Title</label>
+      {{ form.title }}
+      {{ form.title.errors }}
+    </div>
+
+    <div class="form-group">
+      <label>Description <span style="font-weight:400; text-transform:none;">(optional)</span></label>
+      {{ form.description }}
+      {{ form.description.errors }}
+    </div>
+
+    <div style="display:grid; grid-template-columns:2fr 1fr; gap:1rem;">
+      <div class="form-group">
+        <label>Amount</label>
+        {{ form.amount }}
+        {{ form.amount.errors }}
+      </div>
+      <div class="form-group">
+        <label>Currency</label>
+        {{ form.currency }}
+        {{ form.currency.errors }}
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Due Date <span style="font-weight:400; text-transform:none;">(optional)</span></label>
+      {{ form.due_date }}
+      {{ form.due_date.errors }}
+    </div>
+
+    <div class="form-group">
+      <label>Related Case <span style="font-weight:400; text-transform:none;">(optional)</span></label>
+      {{ form.related_case }}
+      {{ form.related_case.errors }}
+    </div>
+
+    {% if form.non_field_errors %}
+      <div class="message message-error">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <div class="divider"></div>
+    <div class="flex-between">
+      <a href="{% url 'admin_panel:invoice_list' %}" class="btn btn-outline">Cancel</a>
+      <button type="submit" class="btn btn-primary">Create Invoice</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

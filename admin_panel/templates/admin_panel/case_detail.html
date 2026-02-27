@@ -1,158 +1,385 @@
 {% extends "admin_panel/base_admin.html" %}
 {% block title %}Case #{{ case.id }}{% endblock %}
 {% block topbar_title %}Case #{{ case.id }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  /*
+   * Inline edit form — hidden by default, shown when admin clicks Edit.
+   * Each requirement row has one edit form toggled by JavaScript.
+   * CUSTOMIZE: change transition speed or style of the edit panel.
+   */
+  .edit-form {
+    display: none;
+    background: var(--cream);
+    border: 1px solid var(--border);
+    padding: 1rem;
+    margin-top: 0.75rem;
+  }
+
+  .edit-form.open {
+    display: block;
+  }
+
+  .edit-form input,
+  .edit-form textarea,
+  .edit-form select {
+    margin-bottom: 0.75rem;
+  }
+
+  .notify-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.875rem;
+    color: var(--navy);
+  }
+
+  .notify-check input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+  }
+
+  .badge-admin-edit {
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 0.65rem;
+    padding: 0.15rem 0.4rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-left: 0.4rem;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page-header">
   <div>
     <h1 class="page-title">Case #{{ case.id }}</h1>
-    <p class="page-subtitle">{{ case.category.name }} · {{ case.get_owner_display }}</p>
+    <p class="page-subtitle">
+      {{ case.category.name }}
+      · {{ case.user.email }}
+      {% if case.group %}· {{ case.group.name }}{% endif %}
+      {% if case.managed_profile %}· For {{ case.managed_profile.full_name }}{% endif %}
+    </p>
   </div>
-  <span class="badge badge-{{ case.status }}" style="font-size:0.8rem; padding:0.4rem 0.9rem;">
+  <span class="badge badge-{{ case.status }}"
+        style="font-size:0.8rem; padding:0.4rem 0.9rem;">
     {{ case.status }}
   </span>
 </div>
+
 <div style="display:grid; grid-template-columns:2fr 1fr; gap:1rem; align-items:start;">
-  <!-- Left: Answers -->
+
+  {# ── LEFT — Requirements + Answers ── #}
   <div>
     <div class="card">
       <div class="card-header">Requirements & Answers</div>
-      {% if case_requirements %}
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Requirement</th>
-                <th>Type</th>
-                <th>Answer</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for cr in case_requirements %}
-                {% with answer=cr.requirement.caseanswer_set.filter(case=case).first %}
-                <tr style="{% if not cr.is_active %}opacity:0.45;{% endif %}">
-                  <td>
-                    {{ cr.requirement.name }}
-                    {% if cr.is_extra %}
-                      <span class="badge badge-neutral" style="font-size:0.65rem;">extra</span>
+
+      {% if requirement_rows %}
+        {% for row in requirement_rows %}
+          
+            <!--#Each row is a dict from the view:
+              row.cr     = CaseRequirement (has is_active, is_extra)
+              row.req    = Requirement (has name, type)
+              row.answer = CaseAnswer or None
+            No lookups in template — all data pre-fetched in view.#-->
+          
+          <div style="padding:1rem 0;
+                      border-bottom:1px solid var(--border);
+                      {% if not row.cr.is_active %}opacity:0.5;{% endif %}">
+
+            {# Requirement header #}
+            <div class="flex-between" style="margin-bottom:0.5rem;">
+              <div>
+                <span style="font-weight:500;">{{ row.req.name }}</span>
+                <span class="badge badge-neutral"
+                      style="font-size:0.65rem; margin-left:0.4rem;">
+                  {{ row.req.type }}
+                </span>
+                {% if row.cr.is_extra %}
+                  <span class="badge badge-neutral"
+                        style="font-size:0.65rem;">extra</span>
+                {% endif %}
+                {% if row.answer.edited_by_admin %}
+                  <span class="badge-admin-edit">edited by admin</span>
+                {% endif %}
+                {% if row.answer.notify_user %}
+                  <span class="badge badge-pending"
+                        style="font-size:0.65rem;">user notified</span>
+                {% endif %}
+              </div>
+
+              <div style="display:flex; gap:0.5rem;">
+                {# Edit button — shows/hides the inline edit form #}
+                {% if row.cr.is_active %}
+                  <button type="button"
+                          class="btn btn-sm btn-outline"
+                          onclick="toggleEdit('edit-{{ row.req.id }}')">
+                    Edit
+                  </button>
+                {% endif %}
+
+                {# Toggle active/inactive #}
+                <form method="POST"
+                      action="{% url 'admin_panel:toggle_requirement' case.id row.cr.id %}"
+                      style="display:inline;">
+                  {% csrf_token %}
+                  {% if row.cr.is_active %}
+                    <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                  {% else %}
+                    <button type="submit" class="btn btn-sm btn-success">Restore</button>
+                  {% endif %}
+                </form>
+              </div>
+            </div>
+
+            {# Current answer display #}
+            <div style="font-size:0.875rem; color:var(--slate); margin-bottom:0.5rem;">
+              {% if row.answer %}
+                {% if row.answer.answer_file %}
+                  <a href="{{ row.answer.answer_file.url }}"
+                     target="_blank"
+                     class="btn btn-sm btn-outline">Download File</a>
+                {% elif row.answer.answer_text %}
+                  {{ row.answer.answer_text|truncatechars:80 }}
+                {% elif row.answer.answer_date %}
+                  {{ row.answer.answer_date }}
+                {% elif row.answer.answer_number %}
+                  {{ row.answer.answer_number }}
+                {% else %}
+                  <em>No answer yet</em>
+                {% endif %}
+              {% else %}
+                <em>No answer yet</em>
+              {% endif %}
+            </div>
+
+            
+              <!--#Inline edit form — hidden by default.
+              Shown when admin clicks Edit button.
+              action='edit_answer' tells the view which POST handler to use.
+              EXPAND: add more requirement types by adding elif blocks
+                      in both this template and the view's edit_answer handler.#-->
+
+            {% if row.cr.is_active %}
+              <div class="edit-form" id="edit-{{ row.req.id }}">
+                <form method="POST"
+                      enctype="multipart/form-data"
+                      action="{% url 'admin_panel:case_detail' case.id %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="edit_answer">
+                  <input type="hidden" name="requirement_id" value="{{ row.req.id }}">
+
+                  {# Input type depends on requirement type #}
+                  {# EXPAND: add new requirement types here #}
+                  {% if row.req.type == 'text' or row.req.type == 'question' %}
+                    <label>Answer</label>
+                    <textarea name="answer_value"
+                              rows="3">{{ row.answer.answer_text|default:'' }}</textarea>
+
+                  {% elif row.req.type == 'date' %}
+                    <label>Date</label>
+                    <input type="date"
+                           name="answer_value"
+                           value="{{ row.answer.answer_date|default:'' }}">
+
+                  {% elif row.req.type == 'number' %}
+                    <label>Number</label>
+                    <input type="number"
+                           name="answer_value"
+                           value="{{ row.answer.answer_number|default:'' }}">
+
+                  {% elif row.req.type == 'file' %}
+                    <label>Upload New File</label>
+                    <input type="file" name="answer_file">
+                    {% if row.answer.answer_file %}
+                      <p class="text-muted text-small mt-1">
+                        Current:
+                        <a href="{{ row.answer.answer_file.url }}"
+                           target="_blank">view file</a>
+                      </p>
                     {% endif %}
-                  </td>
-                  <td class="text-muted">{{ cr.requirement.type }}</td>
-                  <td>
-                    {% for ans in answers %}
-                      {% if ans.requirement == cr.requirement %}
-                        {% if ans.answer_file %}
-                          <a href="{{ ans.answer_file.url }}" target="_blank" class="btn btn-sm btn-outline">Download</a>
-                        {% elif ans.answer_text %}
-                          <span class="text-small">{{ ans.answer_text|truncatechars:40 }}</span>
-                        {% elif ans.answer_date %}
-                          {{ ans.answer_date }}
-                        {% elif ans.answer_number %}
-                          {{ ans.answer_number }}
-                        {% endif %}
-                      {% endif %}
-                    {% endfor %}
-                  </td>
-                  <td>
-                    {% if cr.is_active %}
-                      <span class="badge badge-active">active</span>
-                    {% else %}
-                      <span class="badge badge-rejected">removed</span>
-                    {% endif %}
-                  </td>
-                  <td class="text-right">
-                    <!-- Toggle active/inactive -->
-                    <form method="POST" action="{% url 'admin_panel:toggle_requirement' case.id cr.id %}" style="display:inline;">
-                      {% csrf_token %}
-                      {% if cr.is_active %}
-                        <button type="submit" class="btn btn-sm btn-danger">Remove</button>
-                      {% else %}
-                        <button type="submit" class="btn btn-sm btn-success">Restore</button>
-                      {% endif %}
-                    </form>
-                  </td>
-                </tr>
-                {% endwith %}
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+                  {% endif %}
+
+                  {# Notification checkbox #}
+                  <div class="notify-check">
+                    <input type="checkbox"
+                           name="notify_user"
+                           id="notify-{{ row.req.id }}">
+                    <label for="notify-{{ row.req.id }}"
+                           style="text-transform:none; letter-spacing:0;
+                                  font-size:0.875rem; font-weight:400; color:var(--navy); margin:0;">
+                      Notify user of this change
+                    </label>
+                  </div>
+
+                  <div style="display:flex; gap:0.5rem;">
+                    <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                    <button type="button"
+                            class="btn btn-sm btn-outline"
+                            onclick="toggleEdit('edit-{{ row.req.id }}')">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            {% endif %}
+
+          </div>
+        {% endfor %}
+
       {% else %}
-        <p class="text-muted">No requirements loaded for this case.</p>
+        <div class="empty-state">
+          <p class="empty-state-title">No requirements</p>
+          <p class="text-muted">This case has no requirements loaded.</p>
+        </div>
       {% endif %}
     </div>
-<!-- Add extra requirement -->
-{% if available_to_add %}
-<div class="card" style="margin-top:1rem;">
-  <div class="card-header">Add Extra Requirement</div>
-  <form method="POST" action="{% url 'admin_panel:add_extra_requirement' case.id %}" style="display:flex; gap:0.75rem; align-items:flex-end;">
-    {% csrf_token %}
-    <div class="form-group" style="margin:0; flex:1;">
-      <label>Requirement</label>
-      <select name="requirement_id">
-        {% for req in available_to_add %}
-          <option value="{{ req.id }}">{{ req.name }} ({{ req.type }})</option>
-        {% endfor %}
-      </select>
-    </div>
-    <button type="submit" class="btn btn-outline" style="margin-bottom:0;">Add</button>
-  </form>
-</div>
-{% endif %}
+
+    {# Add extra requirement #}
+    {% if available_to_add %}
+      <div class="card" style="margin-top:1rem;">
+        <div class="card-header">Add Extra Requirement</div>
+        <form method="POST"
+              action="{% url 'admin_panel:add_extra_requirement' case.id %}"
+              style="display:flex; gap:0.75rem; align-items:flex-end;">
+          {% csrf_token %}
+          <div class="form-group" style="margin:0; flex:1;">
+            <label>Requirement</label>
+            <select name="requirement_id">
+              {% for req in available_to_add %}
+                <option value="{{ req.id }}">
+                  {{ req.name }} ({{ req.type }})
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit"
+                  class="btn btn-outline"
+                  style="margin-bottom:0;">
+            Add
+          </button>
+        </form>
+      </div>
+   
+   
+     {% else %}
+      <p style="margin-top:1rem; color:var(--slate);">
+        All requirements for this category are already added to the case.
+      </p>
+    {% endif %}
   </div>
-  <!-- Right: Update status + notes -->
+
+  {# ── RIGHT — Update Case + Case Info ── #}
   <div>
+
+    {# Update status and notes #}
     <div class="card">
       <div class="card-header">Update Case</div>
-      <form method="POST">
+      <form method="POST"
+            action="{% url 'admin_panel:case_detail' case.id %}">
         {% csrf_token %}
+        <input type="hidden" name="action" value="update_case">
+
         <div class="form-group">
           <label>Status</label>
           <select name="status">
             {% for value, label in status_choices %}
-              <option value="{{ value }}" {% if case.status == value %}selected{% endif %}>
+              <option value="{{ value }}"
+                {% if case.status == value %}selected{% endif %}>
                 {{ label }}
               </option>
             {% endfor %}
           </select>
         </div>
+
         <div class="form-group">
           <label>Admin Notes</label>
           <textarea name="notes" rows="4">{{ case.notes|default:'' }}</textarea>
         </div>
-        <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">
+
+        <button type="submit"
+                class="btn btn-primary"
+                style="width:100%; justify-content:center;">
           Save Changes
         </button>
       </form>
     </div>
-<div class="card" style="margin-top:1rem;">
-  <div class="card-header">Case Info</div>
-  <table style="font-size:0.85rem;">
-    <tr>
-      <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">User</td>
-      <td style="padding:0.4rem 0;">{{ case.user.email }}</td>
-    </tr>
-    {% if case.group %}
-    <tr>
-      <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Group</td>
-      <td style="padding:0.4rem 0;">{{ case.group.name }}</td>
-    </tr>
-    {% endif %}
-    {% if case.managed_profile %}
-    <tr>
-      <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">For</td>
-      <td style="padding:0.4rem 0;">{{ case.managed_profile.full_name }}</td>
-    </tr>
-    {% endif %}
-    <tr>
-      <td class="text-muted" style="padding:0.4rem 0.5rem 0.4rem 0;">Created</td>
-      <td style="padding:0.4rem 0;">{{ case.created_at|date:"M d, Y" }}</td>
-    </tr>
-  </table>
-</div>
+
+    {# Case info #}
+    <div class="card" style="margin-top:1rem;">
+      <div class="card-header">Case Info</div>
+      <table style="font-size:0.85rem; width:100%;">
+        <tr>
+          <td class="text-muted"
+              style="padding:0.4rem 0.5rem 0.4rem 0; white-space:nowrap;">
+            User
+          </td>
+          <td style="padding:0.4rem 0;">
+            <a href="{% url 'admin_panel:admin_view_user' case.user.id %}"
+               style="color:var(--amber); text-decoration:none;">
+              {{ case.user.email }}
+            </a>
+          </td>
+        </tr>
+        {% if case.group %}
+          <tr>
+            <td class="text-muted"
+                style="padding:0.4rem 0.5rem 0.4rem 0;">Group</td>
+            <td style="padding:0.4rem 0;">
+              <a href="{% url 'admin_panel:group_detail' case.group.id %}"
+                 style="color:var(--amber); text-decoration:none;">
+                {{ case.group.name }}
+              </a>
+            </td>
+          </tr>
+        {% endif %}
+        {% if case.managed_profile %}
+          <tr>
+            <td class="text-muted"
+                style="padding:0.4rem 0.5rem 0.4rem 0;">For</td>
+            <td style="padding:0.4rem 0;">{{ case.managed_profile.full_name }}</td>
+          </tr>
+        {% endif %}
+        <tr>
+          <td class="text-muted"
+              style="padding:0.4rem 0.5rem 0.4rem 0;">Category</td>
+          <td style="padding:0.4rem 0;">{{ case.category.name }}</td>
+        </tr>
+        <tr>
+          <td class="text-muted"
+              style="padding:0.4rem 0.5rem 0.4rem 0;">Created</td>
+          <td style="padding:0.4rem 0;">{{ case.created_at|date:"M d, Y" }}</td>
+        </tr>
+        <tr>
+          <td class="text-muted"
+              style="padding:0.4rem 0.5rem 0.4rem 0;">Requirements</td>
+          <td style="padding:0.4rem 0;">{{ requirement_rows|length }}</td>
+        </tr>
+      </table>
+    </div>
+
   </div>
 </div>
 {% endblock %}
-<!--view case, update status/notes, manage requirements (add/remove).
-EXPAND: add a section showing uploaded files with download links!>
+
+{% block extra_js %}
+<script>
+  /*
+   * toggleEdit — shows or hides the inline edit form for a requirement.
+   * Called by Edit and Cancel buttons.
+   * Each edit form has a unique id: 'edit-{requirement_id}'
+   *
+   * EXPAND: add animation here if you want a smooth open/close transition.
+   */
+  function toggleEdit(formId) {
+    const form = document.getElementById(formId);
+    if (form) {
+      form.classList.toggle('open');
+    }
+  }
+</script>
+{% endblock %}

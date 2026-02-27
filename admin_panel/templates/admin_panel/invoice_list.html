@@ -1,0 +1,125 @@
+
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/invoice_list.html
+Context from view:
+  invoices      — queryset of Invoice objects (already filtered)
+  email_filter  — current email filter string
+  paid_filter   — 'paid' | 'unpaid' | 'overdue' | None
+Note: invoice.total_paid, invoice.balance, invoice.is_paid,
+      invoice.is_overdue are methods on the Invoice model —
+      called directly in template.
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Invoices{% endblock %}
+{% block topbar_title %}Invoices{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Invoices</h1>
+    <p class="page-subtitle">Manage invoices and record payments.</p>
+  </div>
+  <div style="display:flex; gap:0.5rem;">
+    <a href="{% url 'admin_panel:user_balance_overview' %}" class="btn btn-outline">
+      Balances
+    </a>
+    <a href="{% url 'admin_panel:invoice_create' %}" class="btn btn-primary">
+      + New Invoice
+    </a>
+  </div>
+</div>
+
+{# Filter bar #}
+<form method="GET"
+      style="display:flex; gap:0.5rem; margin-bottom:1rem;
+             align-items:flex-end; flex-wrap:wrap;">
+  <input type="text" name="email"
+         value="{{ email_filter }}"
+         placeholder="Filter by user email..."
+         style="padding:0.45rem 0.75rem; border:1px solid var(--border);
+                font-size:0.85rem; min-width:220px;">
+  <select name="paid"
+          style="padding:0.45rem 0.75rem; border:1px solid var(--border);
+                 font-size:0.85rem;">
+    <option value="">All</option>
+    <option value="unpaid"  {% if paid_filter == 'unpaid'  %}selected{% endif %}>Unpaid</option>
+    <option value="paid"    {% if paid_filter == 'paid'    %}selected{% endif %}>Paid</option>
+    <option value="overdue" {% if paid_filter == 'overdue' %}selected{% endif %}>Overdue</option>
+  </select>
+  <button type="submit" class="btn btn-outline">Filter</button>
+  <a href="{% url 'admin_panel:invoice_list' %}" class="btn btn-outline">Clear</a>
+</form>
+
+<div class="card">
+  {% if invoices %}
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>User</th>
+          <th>Title</th>
+          <th>Amount</th>
+          <th>Paid</th>
+          <th>Balance</th>
+          <th>Due</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for invoice in invoices %}
+          <tr>
+            <td class="text-muted">#{{ invoice.id }}</td>
+            <td>
+              <a href="{% url 'admin_panel:admin_view_user' invoice.user.id %}"
+                 style="color:var(--amber); text-decoration:none;">
+                {{ invoice.user.email }}
+              </a>
+            </td>
+            <td style="font-weight:500;">{{ invoice.title }}</td>
+            <td>${{ invoice.amount }}</td>
+            <td style="color:var(--success);">${{ invoice.total_paid }}</td>
+            <td>
+              <strong {% if invoice.balance > 0 %}style="color:var(--danger);"{% endif %}>
+                ${{ invoice.balance }}
+              </strong>
+            </td>
+            <td>
+              {% if invoice.due_date %}
+                <span {% if invoice.is_overdue %}style="color:var(--danger);"{% endif %}>
+                  {{ invoice.due_date|date:"M d" }}
+                  {% if invoice.is_overdue %}⚠{% endif %}
+                </span>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if invoice.is_paid %}
+                <span class="badge badge-active">paid</span>
+              {% elif invoice.is_overdue %}
+                <span class="badge badge-rejected">overdue</span>
+              {% else %}
+                <span class="badge badge-pending">unpaid</span>
+              {% endif %}
+            </td>
+            <td style="display:flex; gap:0.4rem;">
+            <a href="{% url 'admin_panel:invoice_detail' invoice.id %}"
+                class="btn btn-sm btn-outline">Open</a>
+            <form method="POST" action="{% url 'admin_panel:invoice_delete' invoice.id %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-danger"
+                        onclick="return confirm('Delete this invoice?')">Delete</button>
+            </form>
+            </td>
+                    </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty-state">
+      <p class="empty-state-title">No invoices found</p>
+      <a href="{% url 'admin_panel:invoice_create' %}" class="btn btn-primary"
+         style="margin-top:1rem;">+ New Invoice</a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

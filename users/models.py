@@ -164,6 +164,7 @@ class AdminProfile(models.Model):
     can_view_all_cases  = models.BooleanField(default=False)
     can_create_users    = models.BooleanField(default=False)
     can_manage_roles    = models.BooleanField(default=False)
+    can_manage_content = models.BooleanField(default=False)
 
     # Audit trail — who created this admin and when
     created_by = models.ForeignKey(

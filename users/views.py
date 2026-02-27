@@ -3,6 +3,9 @@ from django.contrib.auth import authenticate, login, logout, get_user_model
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from .forms import LoginForm, RegisterForm
+from tasks.models import Notification
+
+from django.http import JsonResponse
 
 User = get_user_model()
 
@@ -57,3 +60,46 @@ def register_view(request):
         return redirect('cases:dashboard')
 
     return render(request, 'users/register.html', {'form': form})
+
+# ══════════════════════════════════════════════════════════════
+# NOTIFICATION VIEWS (User-facing — add to users app or main views)
+# ══════════════════════════════════════════════════════════════
+@login_required
+def notifications_list(request):
+    """
+    User sees all their notifications — most recent first.
+    Marks all as read when this page is visited.
+
+    Add to: users/views.py or main app views.py
+    URL: /notifications/
+    """
+    notifications = Notification.objects.filter(
+        user=request.user
+    ).order_by('-created_at')
+
+    # Mark all as read when user opens notification page
+    notifications.filter(is_read=False).update(is_read=True)
+
+    return render(request, 'users/notifications_list.html', {
+        'notifications': notifications,
+    })
+
+
+@login_required
+def notifications_count(request):
+    """
+    AJAX endpoint — returns unread notification count.
+    Called by the navbar badge every N seconds.
+
+    URL: /notifications/count/
+    Returns: { count: 5 }
+
+    Add to: urls.py
+    Call from JS: setInterval(() => fetch('/notifications/count/'), 30000)
+    """
+    from django.http import JsonResponse
+    count = Notification.objects.filter(
+        user=request.user,
+        is_read=False
+    ).count()
+    return JsonResponse({'count': count})

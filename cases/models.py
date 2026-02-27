@@ -203,6 +203,9 @@ class CaseAnswer(models.Model):
 
     is_auto_filled = models.BooleanField(default=False)  # True = pulled from profile automatically
     created_at     = models.DateTimeField(auto_now_add=True)
+    
+    edited_by_admin = models.BooleanField(default=False)  # True if an admin edited this answer in the admin panel
+    notify_user     = models.BooleanField(default=False)  # True if admin edited answer and user should be notified (e.g., email notification)
 
     def __str__(self):
         return f'{self.case} - {self.requirement.name}'

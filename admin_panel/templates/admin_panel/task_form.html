@@ -1,0 +1,92 @@
+
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/task_form.html
+Create a task. JS shows/hides correct assignee field based on type.
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block topbar_title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">{{ title }}</h1>
+  <a href="{% url 'admin_panel:task_list' %}" class="btn btn-outline">← Tasks</a>
+</div>
+
+<div class="card" style="max-width:580px;">
+  <form method="POST">
+    {% csrf_token %}
+
+    <div class="form-group">
+      <label>Task Type</label>
+      {{ form.task_type }}
+      {{ form.task_type.errors }}
+    </div>
+
+    <div class="form-group" id="field-user-email">
+      <label>Assign to User (email)</label>
+      {{ form.assigned_to_user_email }}
+      {{ form.assigned_to_user_email.errors }}
+      <p class="text-muted text-small mt-1">User must already have an account.</p>
+    </div>
+
+    <div class="form-group" id="field-admin" style="display:none;">
+      <label>Assign to Admin</label>
+      {{ form.assigned_to_admin }}
+      {{ form.assigned_to_admin.errors }}
+    </div>
+
+    <div class="form-group">
+      <label>Title</label>
+      {{ form.title }}
+      {{ form.title.errors }}
+    </div>
+
+    <div class="form-group">
+      <label>Description <span style="font-weight:400; text-transform:none;">(optional)</span></label>
+      {{ form.description }}
+      {{ form.description.errors }}
+    </div>
+
+    <div class="form-group">
+      <label>Due Date <span style="font-weight:400; text-transform:none;">(optional)</span></label>
+      {{ form.due_date }}
+      {{ form.due_date.errors }}
+    </div>
+
+    <div class="form-group">
+      <label>Related Case <span style="font-weight:400; text-transform:none;">(optional)</span></label>
+      {{ form.related_case }}
+      {{ form.related_case.errors }}
+    </div>
+
+    {% if form.non_field_errors %}
+      <div class="message message-error">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <div class="divider"></div>
+    <div class="flex-between">
+      <a href="{% url 'admin_panel:task_list' %}" class="btn btn-outline">Cancel</a>
+      <button type="submit" class="btn btn-primary">Create Task</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const typeSelect = document.getElementById('id_task_type');
+  const userField  = document.getElementById('field-user-email');
+  const adminField = document.getElementById('field-admin');
+
+  function updateFields() {
+    const val = typeSelect.value;
+    userField.style.display  = val === 'user'  ? '' : 'none';
+    adminField.style.display = val === 'admin' ? '' : 'none';
+  }
+
+  typeSelect.addEventListener('change', updateFields);
+  updateFields();
+</script>
+{% endblock %}
+
