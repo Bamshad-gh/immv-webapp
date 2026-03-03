@@ -1,0 +1,124 @@
+{% extends "main_site/base_public.html" %}
+
+{% block meta_title %}Contact Us{% endblock %}
+{% block meta_description %}Get in touch with our immigration team. We'll review your situation and get back to you promptly.{% endblock %}
+
+{% block content %}
+
+{# ── HEADER ── #}
+<section class="section section-navy" style="padding:5rem 2rem 4rem;">
+  <div class="container">
+    <p class="pub-tag" style="margin-bottom:1rem;">Get In Touch</p>
+    <h1 class="section-title" style="color:var(--white);">Contact Us</h1>
+    <p style="color:rgba(255,255,255,0.65); font-size:1.05rem; max-width:520px; margin-top:0.75rem;">
+      Send us a message and our team will get back to you as soon as possible.
+    </p>
+  </div>
+</section>
+
+{# ── CONTACT GRID ── #}
+<section class="section section-cream">
+  <div class="container">
+    <div style="display:grid; grid-template-columns:2fr 1fr; gap:2.5rem; align-items:start;">
+
+      {# LEFT — Contact form #}
+      <div class="pub-card" style="padding:2.5rem;">
+        <h2 style="font-family:var(--font-serif); font-size:1.4rem; margin-bottom:1.75rem;">
+          Send a Message
+        </h2>
+
+        <form method="post" action="{% url 'main_site:contact' %}" novalidate>
+          {% csrf_token %}
+
+          <div class="pub-form-row">
+            <div class="pub-form-group">
+              <label class="pub-label" for="id_name">Full Name <span style="color:var(--danger);">*</span></label>
+              <input class="pub-input" type="text" id="id_name" name="name"
+                     value="{{ request.POST.name|default:'' }}"
+                     placeholder="Your full name" required>
+            </div>
+            <div class="pub-form-group">
+              <label class="pub-label" for="id_email">Email Address <span style="color:var(--danger);">*</span></label>
+              <input class="pub-input" type="email" id="id_email" name="email"
+                     value="{{ request.POST.email|default:'' }}"
+                     placeholder="you@example.com" required>
+            </div>
+          </div>
+
+          <div class="pub-form-row">
+            <div class="pub-form-group">
+              <label class="pub-label" for="id_phone">Phone <span style="color:var(--slate); font-weight:400; text-transform:none; font-size:0.75rem;">(optional)</span></label>
+              <input class="pub-input" type="tel" id="id_phone" name="phone"
+                     value="{{ request.POST.phone|default:'' }}"
+                     placeholder="+1 (555) 000-0000">
+            </div>
+            <div class="pub-form-group">
+              <label class="pub-label" for="id_subject">Subject <span style="color:var(--danger);">*</span></label>
+              <input class="pub-input" type="text" id="id_subject" name="subject"
+                     value="{{ request.POST.subject|default:'' }}"
+                     placeholder="e.g., Work Permit Inquiry" required>
+            </div>
+          </div>
+
+          <div class="pub-form-group">
+            <label class="pub-label" for="id_message">Message <span style="color:var(--danger);">*</span></label>
+            <textarea class="pub-textarea" id="id_message" name="message"
+                      rows="6" placeholder="Tell us about your situation…" required>{{ request.POST.message|default:'' }}</textarea>
+          </div>
+
+          <button type="submit" class="pub-btn pub-btn-primary" style="width:100%; justify-content:center;">
+            Send Message →
+          </button>
+        </form>
+      </div>
+
+      {# RIGHT — Contact info sidebar #}
+      <div>
+        <div class="pub-card" style="padding:2rem; margin-bottom:1rem;">
+          <h3 style="font-family:var(--font-serif); font-size:1.1rem; margin-bottom:1.25rem;">
+            Contact Information
+          </h3>
+          {% if site_settings.contact_email %}
+            <div style="margin-bottom:1rem;">
+              <p style="font-size:0.75rem; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--slate); margin-bottom:0.25rem;">Email</p>
+              <a href="mailto:{{ site_settings.contact_email }}"
+                 style="color:var(--amber); text-decoration:none; font-weight:500;">
+                {{ site_settings.contact_email }}
+              </a>
+            </div>
+          {% endif %}
+          {% if site_settings.contact_phone %}
+            <div style="margin-bottom:1rem;">
+              <p style="font-size:0.75rem; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--slate); margin-bottom:0.25rem;">Phone</p>
+              <a href="tel:{{ site_settings.contact_phone }}"
+                 style="color:var(--navy); text-decoration:none;">
+                {{ site_settings.contact_phone }}
+              </a>
+            </div>
+          {% endif %}
+          {% if site_settings.address %}
+            <div>
+              <p style="font-size:0.75rem; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--slate); margin-bottom:0.25rem;">Office</p>
+              <p style="font-size:0.9rem; color:var(--slate); white-space:pre-line; line-height:1.6;">{{ site_settings.address }}</p>
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="pub-card" style="padding:2rem;">
+          <h3 style="font-family:var(--font-serif); font-size:1.1rem; margin-bottom:0.75rem;">
+            Already a client?
+          </h3>
+          <p style="font-size:0.9rem; color:var(--slate); margin-bottom:1rem;">
+            Access your cases, documents, and invoices through the client portal.
+          </p>
+          <a href="{% url 'login' %}" class="pub-btn pub-btn-outline-dark" style="width:100%; justify-content:center;">
+            Sign In to Portal
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+{% endblock %}

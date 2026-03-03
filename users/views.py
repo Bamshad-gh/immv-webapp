@@ -89,17 +89,61 @@ def notifications_list(request):
 def notifications_count(request):
     """
     AJAX endpoint — returns unread notification count.
-    Called by the navbar badge every N seconds.
+    Called by the navbar badge every 30 seconds to keep the badge fresh.
 
-    URL: /notifications/count/
+    URL:     /users/notifications/count/
     Returns: { count: 5 }
-
-    Add to: urls.py
-    Call from JS: setInterval(() => fetch('/notifications/count/'), 30000)
     """
-    from django.http import JsonResponse
     count = Notification.objects.filter(
         user=request.user,
         is_read=False
     ).count()
     return JsonResponse({'count': count})
+
+
+@login_required
+def notifications_preview(request):
+    """
+    AJAX endpoint — returns the 5 most recent notifications as JSON.
+    Called when the user clicks the bell icon to open the dropdown.
+
+    We use select_related('task') to fetch the linked task in the same
+    DB query instead of making a separate query for each notification
+    (avoids the "N+1 query" performance problem).
+
+    URL:     /users/notifications/preview/
+    Returns: {
+        unread_count: int,
+        notifications: [
+            { id, message, is_read, created_at, task_id }, ...
+        ]
+    }
+    """
+    # Get the 5 most recent notifications for this user
+    recent = Notification.objects.filter(
+        user=request.user
+    ).select_related('task').order_by('-created_at')[:5]
+
+    # Separate query for the total unread count (badge sync)
+    unread_count = Notification.objects.filter(
+        user=request.user,
+        is_read=False
+    ).count()
+
+    data = {
+        'unread_count': unread_count,
+        'notifications': [
+            {
+                'id':         n.id,
+                'message':    n.message,
+                'is_read':    n.is_read,
+                # Format: "Mar 02" — concise enough for the dropdown
+                'created_at': n.created_at.strftime('%b %d'),
+                # task_id is None when the notification is not task-linked
+                # (e.g. invoice notifications) — JS handles null safely
+                'task_id':    n.task_id,
+            }
+            for n in recent
+        ],
+    }
+    return JsonResponse(data)

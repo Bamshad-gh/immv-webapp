@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}My Invoices{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">My Invoices</h1>
+      <p class="page-subtitle">Your billing history and outstanding payments.</p>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{{ message.tags }}" style="margin-bottom:1rem;">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if invoices %}
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Invoice</th>
+            <th>Amount</th>
+            <th>Paid</th>
+            <th>Balance Due</th>
+            <th>Due Date</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for invoice in invoices %}
+            <tr {% if invoice.is_overdue %}style="background:#fff5f5;"{% endif %}>
+              <td>
+                <a href="{% url 'payments:invoice_detail' invoice.id %}"
+                   style="font-weight:500; color:var(--navy); text-decoration:none;">
+                  {{ invoice.title }}
+                </a>
+                {% if invoice.is_overdue %}
+                  <span style="font-size:0.7rem; color:var(--danger); font-weight:600;
+                               margin-left:0.4rem;">OVERDUE</span>
+                {% endif %}
+              </td>
+              <td>{{ invoice.currency }} {{ invoice.amount }}</td>
+              <td>{{ invoice.currency }} {{ invoice.total_paid }}</td>
+              <td>
+                {% if invoice.balance_due > 0 %}
+                  <strong style="color:var(--danger);">
+                    {{ invoice.currency }} {{ invoice.balance_due }}
+                  </strong>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if invoice.due_date %}
+                  <span {% if invoice.is_overdue %}style="color:var(--danger); font-weight:600;"{% endif %}>
+                    {{ invoice.due_date|date:"M d, Y" }}
+                  </span>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="badge badge-{{ invoice.status }}">
+                  {{ invoice.get_status_display }}
+                </span>
+              </td>
+              <td>
+                <a href="{% url 'payments:invoice_detail' invoice.id %}"
+                   class="btn btn-sm btn-outline">View</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  {% else %}
+    <div class="card">
+      <div class="empty-state">
+        <p class="empty-state-title">No invoices yet</p>
+        <p class="text-muted">
+          Invoices from your case manager will appear here when they are issued.
+        </p>
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

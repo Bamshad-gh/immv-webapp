@@ -45,8 +45,10 @@ INSTALLED_APPS = [
     'cases',
     'groups',
     'admin_panel',
-    'tasks',      # ← add this
-    'payments',   # ← add this
+    'tasks',
+    'payments',
+    'main_site',                    # public marketing site
+    'django.contrib.sitemaps',      # SEO: /sitemap.xml
 ]
 # Tell Django to use YOUR User model
 AUTH_USER_MODEL = 'users.User'
@@ -75,6 +77,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'admin_panel.context_processors.admin_context',  # add admin_profile to context for all templates
+                'main_site.context_processors.site_settings',   # site_settings available in every template
             ],
         },
     },
@@ -129,3 +132,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# Media files (uploads — logo, blog thumbnails, case documents)
+MEDIA_URL  = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'

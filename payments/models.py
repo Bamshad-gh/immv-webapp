@@ -193,6 +193,22 @@ class Payment(models.Model):
             self.reference = str(uuid.uuid4())
         super().save(*args, **kwargs)
 
+    # UUID4 pattern: 8-4-4-4-12 hex digits separated by dashes.
+    # When admin leaves the reference blank, save() fills it with a UUID4.
+    # This property lets templates and views distinguish auto-generated IDs
+    # (meaningless to users) from real references (bank IDs, cheque numbers, etc.).
+    _UUID_RE = None  # lazy-compiled regex stored on the class
+
+    @property
+    def reference_is_auto(self):
+        import re
+        if Payment._UUID_RE is None:
+            Payment._UUID_RE = re.compile(
+                r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+                re.IGNORECASE
+            )
+        return bool(Payment._UUID_RE.match(self.reference or ''))
+
     def __str__(self):
         return f'Payment #{self.id} — {self.amount} on Invoice #{self.invoice_id}'
 

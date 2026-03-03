@@ -1,11 +1,16 @@
 
 <!-- ============================================================
 FILE: admin_panel/templates/admin_panel/base_admin.html
+
 Base template for ALL admin panel pages.
 Sidebar navigation — only shows links the admin has permission for.
-CUSTOMIZE: update brand name, sidebar links.
-EXPAND: add a notifications section in the sidebar.
-============================================================ --><!DOCTYPE html>
+
+CUSTOMIZE: update brand name, color variables, sidebar links.
+EXPAND:    add new nav sections using the comment block at the bottom
+           of the sidebar. Each new link auto-gets collapse behavior
+           as long as you use the .nav-icon + .nav-text pattern.
+============================================================ -->
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -14,6 +19,11 @@ EXPAND: add a notifications section in the sidebar.
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
   <style>
+    /* ── Design tokens ───────────────────────────────────────────────
+       CUSTOMIZE: change these values here and EVERYTHING that uses
+       them (colors, widths, fonts) updates automatically.
+       This is the single source of truth for the whole admin UI.
+    ──────────────────────────────────────────────────────────────── */
     :root {
       --navy:        #0f1923;
       --cream:       #f7f5f0;
@@ -24,7 +34,15 @@ EXPAND: add a notifications section in the sidebar.
       --white:       #ffffff;
       --danger:      #c0392b;
       --success:     #2e7d52;
-      --sidebar-width: 230px;
+
+      /* Sidebar widths.
+         --sidebar-width          = expanded (shows icons + text)
+         --sidebar-collapsed-width = collapsed (icons only)
+         CUSTOMIZE: change either value here — all CSS that depends on
+         them (margins, tooltip offsets) will update automatically. */
+      --sidebar-width:           230px;
+      --sidebar-collapsed-width: 56px;
+
       --font-serif: 'Instrument Serif', Georgia, serif;
       --font-sans:  'DM Sans', system-ui, sans-serif;
     }
@@ -40,17 +58,37 @@ EXPAND: add a notifications section in the sidebar.
       min-height: 100vh;
     }
 
-    /* ── Sidebar ── */
+    /* ── Sidebar ─────────────────────────────────────────────────────
+       The sidebar is position:fixed so it stays on screen while the
+       user scrolls the main content.
+
+       overflow-y:auto  = IMMEDIATE FIX for off-screen items.
+                          Even without collapsing, you can now scroll
+                          to the Superadmin section on small screens.
+       scrollbar-width:none = hides the scrollbar visually (Firefox).
+                              The ::-webkit-scrollbar rule does the same
+                              for Chrome/Safari/Edge.
+       transition:width  = animates the collapse/expand smoothly.
+    ──────────────────────────────────────────────────────────────── */
     .sidebar {
       width: var(--sidebar-width);
       background: var(--navy);
-      min-height: 100vh;
+      /* height:100vh (not min-height) is required for overflow-y:auto to work.
+         min-height grows to fit content so there's no constraint to scroll within.
+         height:100vh fixes the sidebar to viewport height — content beyond that
+         is scrollable. CUSTOMIZE: change to a fixed px value if needed. */
+      height: 100vh;
       position: fixed;
       top: 0; left: 0;
       display: flex;
       flex-direction: column;
       z-index: 100;
+      overflow-y: auto;
+      overflow-x: hidden;
+      transition: width 0.22s ease;
+      scrollbar-width: none;                    /* Firefox */
     }
+    .sidebar::-webkit-scrollbar { display: none; } /* Chrome / Safari / Edge */
 
     .sidebar-brand {
       padding: 1.5rem 1.25rem 1rem;
@@ -66,13 +104,17 @@ EXPAND: add a notifications section in the sidebar.
 
     .sidebar-brand a span { color: var(--amber); }
 
+    /* Section labels ("OVERVIEW", "TASKS", etc.)
+       Padding reduced vs default — this alone frees ~40px of vertical
+       space even without collapsing.
+       CUSTOMIZE: raise padding-top back to 1.25rem for more breathing room. */
     .sidebar-label {
       font-size: 0.65rem;
       font-weight: 600;
       letter-spacing: 0.1em;
       text-transform: uppercase;
       color: rgba(255,255,255,0.3);
-      padding: 1.25rem 1.25rem 0.4rem;
+      padding: 0.7rem 1.25rem 0.3rem;
     }
 
     .sidebar-nav {
@@ -98,7 +140,7 @@ EXPAND: add a notifications section in the sidebar.
       background: rgba(255,255,255,0.07);
     }
 
-    .sidebar-nav li admin_profile.active {
+    .sidebar-nav li a.active {
       color: var(--amber);
       background: rgba(200,130,10,0.12);
     }
@@ -121,12 +163,18 @@ EXPAND: add a notifications section in the sidebar.
 
     .sidebar-footer a:hover { color: rgba(255,255,255,0.7); }
 
-    /* ── Main content ── */
+    /* ── Main content area ────────────────────────────────────────────
+       margin-left matches the sidebar width so content never goes under it.
+       transition:margin-left matches the sidebar's transition so both
+       animate together — the sidebar shrinks and the content slides left
+       at exactly the same speed.
+    ──────────────────────────────────────────────────────────────── */
     .admin-main {
       margin-left: var(--sidebar-width);
       flex: 1;
       display: flex;
       flex-direction: column;
+      transition: margin-left 0.22s ease;   /* matches sidebar transition */
     }
 
     .admin-topbar {
@@ -264,112 +312,657 @@ EXPAND: add a notifications section in the sidebar.
     .mt-3 { margin-top: 1.5rem; }
     .divider { height: 1px; background: var(--border); margin: 1.5rem 0; }
 
-    /* CUSTOMIZE: swap CSS variables above to retheme everything */
+    /* ── Notification bell (admin topbar) ─────────────────────────────
+       Same classes as base.html so the component looks identical.
+       The bell sits in the topbar; the dropdown appears below it.
+       EXPAND: add notification_type filtering to show only admin tasks.
+    ──────────────────────────────────────────────────────────────── */
+    .notif-bell { position: relative; }
+
+    .notif-bell-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px;
+      color: var(--slate);
+      text-decoration: none;
+      border-radius: 4px;
+      transition: color 0.15s, background 0.15s;
+      position: relative;
+    }
+    .notif-bell-btn:hover { color: var(--navy); background: var(--cream); }
+
+    .notif-badge {
+      position: absolute; top: 4px; right: 4px;
+      background: #e53e3e;
+      color: #fff;
+      font-size: 0.6rem; font-weight: 700;
+      min-width: 16px; height: 16px;
+      border-radius: 8px;
+      padding: 0 4px;
+      display: flex; align-items: center; justify-content: center;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    .notif-dropdown {
+      position: absolute; top: calc(100% + 8px); right: 0;
+      width: 300px;
+      background: var(--white);
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+      z-index: 200;
+    }
+
+    .notif-dropdown-header {
+      padding: 0.75rem 1rem;
+      font-size: 0.75rem; font-weight: 600;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--slate);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .notif-item {
+      display: block; padding: 0.75rem 1rem;
+      font-size: 0.85rem; color: var(--navy);
+      border-bottom: 1px solid var(--border);
+      text-decoration: none;
+      line-height: 1.4;
+      transition: background 0.1s;
+    }
+    .notif-item:hover { background: var(--cream); }
+    .notif-item.unread { background: #fffbeb; font-weight: 500; }
+
+    .notif-item-date {
+      font-size: 0.75rem; color: var(--slate);
+      margin-top: 0.2rem;
+    }
+
+    .notif-view-all {
+      display: block; text-align: center;
+      padding: 0.6rem; font-size: 0.8rem;
+      color: var(--navy); text-decoration: none;
+      font-weight: 500;
+    }
+    .notif-view-all:hover { background: var(--cream); }
+
+    .notif-empty {
+      padding: 1.5rem 1rem; text-align: center;
+      font-size: 0.85rem; color: var(--slate);
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+       COLLAPSIBLE SIDEBAR SYSTEM
+       ════════════════════════════════════════════════════════════════
+
+       HOW THE WHOLE SYSTEM WORKS (read once, understand forever):
+       ─────────────────────────────────────────────────────────────
+       JavaScript adds/removes ONE CSS class — 'collapsed' — on the
+       sidebar element. That single class change triggers a cascade
+       of CSS rules below that hide text, narrow the sidebar, shift
+       the content, and center the icons.
+
+       The matching class 'sidebar-collapsed' goes on #adminMain so
+       its margin-left shrinks to match the narrower sidebar.
+
+       Summary of what changes when 'collapsed' is added:
+         1. sidebar width   → var(--sidebar-collapsed-width) = 56px
+         2. .admin-main     → margin-left: 56px  (via sidebar-collapsed)
+         3. section labels  → display:none
+         4. link text       → display:none
+         5. "Admin Panel"   → display:none
+         6. user email      → display:none
+         7. link icons      → re-center (justify-content:center)
+         8. hover → tooltip → appears to the right via CSS ::after
+
+       NOTHING ELSE needs to be touched. Add a new nav link using the
+       standard pattern and it gets collapse behavior automatically.
+       ════════════════════════════════════════════════════════════════ */
+
+    /* 1. Narrow the sidebar when collapsed */
+    .sidebar.collapsed { width: var(--sidebar-collapsed-width); }
+
+    /* 2. Shift main content left to fill the space */
+    .admin-main.sidebar-collapsed { margin-left: var(--sidebar-collapsed-width); }
+
+    /* 3–6. Hide text elements.
+       Each class name maps to a specific HTML element:
+         .sidebar-label          → section headers "OVERVIEW", "TASKS", etc.
+         .nav-text               → link label text inside <span class="nav-text">
+         .sidebar-brand-subtitle → "Admin Panel" text below the logo
+         .sidebar-footer-email   → user's email in the footer
+       EXPAND: add more .sidebar.collapsed .your-class { display:none }
+               rules here to hide other elements when collapsed. */
+    .sidebar.collapsed .sidebar-label          { display: none; }
+    .sidebar.collapsed .nav-text               { display: none; }
+    .sidebar.collapsed .sidebar-brand-subtitle { display: none; }
+    .sidebar.collapsed .sidebar-footer-email   { display: none; }
+
+    /* 7. Re-center the icon in the narrow rail when text is hidden.
+       flex-shrink:0 on .nav-icon prevents the icon from squishing. */
+    .sidebar.collapsed .sidebar-nav li a { justify-content: center; }
+
+    /* Nav icon — always visible at 70% opacity, full opacity on hover.
+       flex-shrink:0 = icon never gets compressed, even in narrow rail.
+       CUSTOMIZE: change opacity values or remove the fade if you prefer. */
+    .nav-icon { flex-shrink: 0; opacity: 0.7; transition: opacity 0.15s; }
+    .sidebar-nav li a:hover .nav-icon { opacity: 1; }
+
+    /* 8. CSS tooltips — appear to the right when sidebar is collapsed.
+       ─────────────────────────────────────────────────────────────
+       HOW IT WORKS (no JavaScript needed):
+         The CSS ::after pseudo-element reads its text from the
+         data-tooltip="..." attribute on the <a> tag.
+         Using position:fixed means the tooltip escapes the sidebar's
+         overflow:hidden — it renders outside the sidebar completely.
+         opacity + transform animate a gentle slide-in on hover.
+
+       HOW TO CUSTOMIZE:
+         background/color → change tooltip color scheme
+         font-size        → make tooltip text bigger or smaller
+         padding          → add more internal space
+         border-radius    → 0 for sharp corners, higher for rounder
+         left:calc(...)   → change offset from the sidebar edge
+    ──────────────────────────────────────────────────────────────── */
+    .sidebar.collapsed .sidebar-nav li a { position: relative; }
+
+    .sidebar.collapsed .sidebar-nav li a::after {
+      content: attr(data-tooltip);            /* reads data-tooltip="Name" */
+      position: fixed;                        /* escapes overflow:hidden */
+      left: calc(var(--sidebar-collapsed-width) + 8px);
+      background: #1e2d3d;
+      color: var(--white);
+      font-size: 0.78rem;
+      font-weight: 500;
+      padding: 0.3rem 0.65rem;
+      border-radius: 4px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateX(-4px);           /* starts 4px to the left */
+      transition: opacity 0.12s, transform 0.12s;
+      z-index: 9999;
+    }
+
+    .sidebar.collapsed .sidebar-nav li a:hover::after {
+      opacity: 1;
+      transform: translateX(0);              /* slides to final position */
+    }
+
+    /* ── Toggle button ─────────────────────────────────────────────────
+       Sits in the left side of the topbar next to the page title.
+       Clicking it triggers the JS collapse toggle.
+
+       CUSTOMIZE: change colors, size, or border-radius.
+       EXPAND: move this button into .sidebar-brand to keep it inside
+               the sidebar — just move the HTML and remove it from topbar.
+    ──────────────────────────────────────────────────────────────────── */
+    .sidebar-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.4rem;
+      border-radius: 4px;
+      color: var(--slate);
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      transition: background 0.15s, color 0.15s;
+    }
+    .sidebar-toggle:hover { background: var(--cream); color: var(--navy); }
+
+    /* CUSTOMIZE: swap the CSS variables in :root above to retheme everything */
     /* EXPAND:    add new utility classes here as the project grows */
   </style>
+{# ── Dynamic color overrides from Admin Panel → Content → Site Settings ── #}
+{% if site_settings.color_primary or site_settings.color_accent or site_settings.color_accent_light or site_settings.color_background %}
+<style>
+  :root {
+    {% if site_settings.color_primary %}--navy: {{ site_settings.color_primary }};{% endif %}
+    {% if site_settings.color_accent %}--amber: {{ site_settings.color_accent }};{% endif %}
+    {% if site_settings.color_accent_light %}--amber-light: {{ site_settings.color_accent_light }};{% endif %}
+    {% if site_settings.color_background %}--cream: {{ site_settings.color_background }};{% endif %}
+  }
+</style>
+{% endif %}
   {% block extra_css %}{% endblock %}
 </head>
 <body>
 
 
+  <!-- ══════════════════════════════════════════════════════════════
+       SIDEBAR
+       id="sidebar" is required — the JS toggle and localStorage
+       state-restore both look up this exact ID.
 
-  <!-- Sidebar -->
-  <aside class="sidebar">
+       HOW TO ADD A NEW SECTION:
+         1. Copy one of the existing if/endif blocks below.
+         2. Update: permission check, sidebar-label text, URL names,
+            data-tooltip value, SVG icon paths, and nav-text.
+         3. Collapse behavior is automatic — .nav-icon and .nav-text
+            are already targeted by the collapse CSS above.
+  ══════════════════════════════════════════════════════════════════ -->
+  <aside class="sidebar" id="sidebar">
+
     <div class="sidebar-brand">
       <a href="{% url 'admin_panel:admin_dashboard' %}">Case<span>Flow</span></a>
-      <div style="font-size:0.7rem; color:rgba(255,255,255,0.3); margin-top:0.2rem;">Admin Panel</div>
+      <!-- sidebar-brand-subtitle: hides when collapsed via CSS rule above.
+           CUSTOMIZE: change "Admin Panel" to your product subtitle. -->
+      <div class="sidebar-brand-subtitle"
+           style="font-size:0.7rem; color:rgba(255,255,255,0.3); margin-top:0.2rem;">
+        Admin Panel
+      </div>
     </div>
 
     {% if request.user.is_authenticated %}
 
+      <!-- ── OVERVIEW ─────────────────────────────────────────────
+           Always visible — no permission check needed for dashboard.
+      ──────────────────────────────────────────────────────────── -->
       <div class="sidebar-label">Overview</div>
       <ul class="sidebar-nav">
-        <li><a href="{% url 'admin_panel:admin_dashboard' %}">Dashboard</a></li>
+        <li>
+          <!-- HOW TO READ THIS PATTERN:
+               data-tooltip  = text shown as tooltip in collapsed state
+               .nav-icon     = SVG — always visible, auto-centers when collapsed
+               .nav-text     = label text — hidden when collapsed -->
+          <a href="{% url 'admin_panel:admin_dashboard' %}" data-tooltip="Dashboard">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- 4-square grid icon -->
+              <rect x="3" y="3" width="7" height="7"/>
+              <rect x="14" y="3" width="7" height="7"/>
+              <rect x="14" y="14" width="7" height="7"/>
+              <rect x="3" y="14" width="7" height="7"/>
+            </svg>
+            <span class="nav-text">Dashboard</span>
+          </a>
+        </li>
       </ul>
-      {#tasks#}
+
+      <!-- ── TASKS ─────────────────────────────────────────────────
+           Visible to superusers or admins with can_manage_tasks.
+           EXPAND: add "My Tasks" link for the logged-in admin here.
+      ──────────────────────────────────────────────────────────── -->
       {% if is_super or admin_profile.can_manage_tasks %}
       <div class="sidebar-label">Tasks</div>
       <ul class="sidebar-nav">
-        <li><a href="{% url 'admin_panel:task_list' %}">All Tasks</a></li>
-        <li><a href="{% url 'admin_panel:task_create' %}">Create Task</a></li>
+        <li>
+          <a href="{% url 'admin_panel:task_list' %}" data-tooltip="All Tasks">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Checkmark inside a rounded square — "completed tasks" -->
+              <polyline points="9 11 12 14 22 4"/>
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+            </svg>
+            <span class="nav-text">All Tasks</span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'admin_panel:task_create' %}" data-tooltip="Create Task">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Plus inside a circle — "add new" -->
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="16"/>
+              <line x1="8" y1="12" x2="16" y2="12"/>
+            </svg>
+            <span class="nav-text">Create Task</span>
+          </a>
+        </li>
       </ul>
-    {% endif %}
-      {#invoices#}
-    {% if is_super or admin_profile.can_manage_payments %}
+      {% endif %}
+
+      <!-- ── PAYMENTS ──────────────────────────────────────────────
+           Visible to superusers or admins with can_manage_payments.
+           EXPAND: add "Refunds" or "Payment Methods" link here.
+      ──────────────────────────────────────────────────────────── -->
+      {% if is_super or admin_profile.can_manage_payments %}
       <div class="sidebar-label">Payments</div>
       <ul class="sidebar-nav">
-        <li><a href="{% url 'admin_panel:invoice_list' %}">Invoices</a></li>
-        <li><a href="{% url 'admin_panel:invoice_create' %}">Create Invoice</a></li>
-        <li><a href="{% url 'admin_panel:user_balance_overview' %}">Balances</a></li>
+        <li>
+          <a href="{% url 'admin_panel:invoice_list' %}" data-tooltip="Invoices">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Document / file icon with lines inside -->
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            <span class="nav-text">Invoices</span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'admin_panel:invoice_create' %}" data-tooltip="Create Invoice">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Dollar sign / currency symbol -->
+              <line x1="12" y1="1" x2="12" y2="23"/>
+              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+            <span class="nav-text">Create Invoice</span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'admin_panel:user_balance_overview' %}" data-tooltip="Balances">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Bar chart — three vertical bars at different heights -->
+              <line x1="12" y1="20" x2="12" y2="10"/>
+              <line x1="18" y1="20" x2="18" y2="4"/>
+              <line x1="6"  y1="20" x2="6"  y2="16"/>
+            </svg>
+            <span class="nav-text">Balances</span>
+          </a>
+        </li>
       </ul>
-    {% endif %}
-
-      {# Users section — superuser or admin with can_create_users #}
-      {% if is_super or ap.can_create_users %}
-        <div class="sidebar-label">Users</div>
-        <ul class="sidebar-nav">
-          <li><a href="{% url 'admin_panel:user_list' %}">All Users</a></li>
-          <li><a href="{% url 'admin_panel:create_user' %}">Create User</a></li>
-        </ul>
       {% endif %}
 
-      {# Cases section — superuser or admin with can_view_all_cases #}
-      {% if is_super or ap.can_view_all_cases %}
-        <div class="sidebar-label">Cases</div>
-        <ul class="sidebar-nav">
-          <li><a href="{% url 'admin_panel:case_list' %}">All Cases</a></li>
-          <li><a href="{% url 'admin_panel:create_case' %}">Create Case</a></li>
-        </ul>
+      <!-- ── USERS ──────────────────────────────────────────────────
+           Visible to superusers or admins with can_create_users.
+           EXPAND: add "Roles" link here when role management is built.
+      ──────────────────────────────────────────────────────────── -->
+      {% if is_super or admin_profile.can_create_users %}
+      <div class="sidebar-label">Users</div>
+      <ul class="sidebar-nav">
+        <li>
+          <a href="{% url 'admin_panel:user_list' %}" data-tooltip="All Users">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Two people / group icon -->
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            <span class="nav-text">All Users</span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'admin_panel:create_user' %}" data-tooltip="Create User">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Person + plus sign — "add user" -->
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+              <line x1="19" y1="8" x2="19" y2="14"/>
+              <line x1="16" y1="11" x2="22" y2="11"/>
+            </svg>
+            <span class="nav-text">Create User</span>
+          </a>
+        </li>
+      </ul>
       {% endif %}
-        {# service builder #}
+
+      <!-- ── CASES ──────────────────────────────────────────────────
+           Visible to superusers or admins with can_view_all_cases.
+           EXPAND: add "Pending Review" link for a filtered case view.
+      ──────────────────────────────────────────────────────────── -->
+      {% if is_super or admin_profile.can_view_all_cases %}
+      <div class="sidebar-label">Cases</div>
+      <ul class="sidebar-nav">
+        <li>
+          <a href="{% url 'admin_panel:case_list' %}" data-tooltip="All Cases">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Briefcase icon -->
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+            </svg>
+            <span class="nav-text">All Cases</span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'admin_panel:create_case' %}" data-tooltip="Create Case">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Folder + plus sign — "new case" -->
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              <line x1="12" y1="11" x2="12" y2="17"/>
+              <line x1="9"  y1="14" x2="15" y2="14"/>
+            </svg>
+            <span class="nav-text">Create Case</span>
+          </a>
+        </li>
+      </ul>
+      {% endif %}
+
+      <!-- ── SERVICE BUILDER ────────────────────────────────────────
+           Visible to superusers or admins with can_manage_content.
+           EXPAND: add "Categories" link for category management.
+      ──────────────────────────────────────────────────────────── -->
       {% if is_super or admin_profile.can_manage_content %}
-        <div class="sidebar-label">Service Builder</div>
-        <ul class="sidebar-nav">
-          <li><a href="{% url 'admin_panel:service_list' %}">All Services</a></li>
-          <li><a href="{% url 'admin_panel:service_builder' %}">Builder</a></li>
+      <div class="sidebar-label">Service Builder</div>
+      <ul class="sidebar-nav">
+        <li>
+          <a href="{% url 'admin_panel:service_list' %}" data-tooltip="All Services">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Three stacked layers — "services/packages" -->
+              <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+              <polyline points="2 17 12 22 22 17"/>
+              <polyline points="2 12 12 17 22 12"/>
+            </svg>
+            <span class="nav-text">All Services</span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'admin_panel:service_builder' %}" data-tooltip="Builder">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Sliders / adjustment icon — "configure" -->
+              <line x1="4"  y1="21" x2="4"  y2="14"/>
+              <line x1="4"  y1="10" x2="4"  y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="12"/>
+              <line x1="12" y1="8"  x2="12" y2="3"/>
+              <line x1="20" y1="21" x2="20" y2="16"/>
+              <line x1="20" y1="12" x2="20" y2="3"/>
+              <line x1="1"  y1="14" x2="7"  y2="14"/>
+              <line x1="9"  y1="8"  x2="15" y2="8"/>
+              <line x1="17" y1="16" x2="23" y2="16"/>
+            </svg>
+            <span class="nav-text">Builder</span>
+          </a>
+        </li>
       </ul>
       {% endif %}
 
-      {# Groups section — superuser or admin with can_create_groups #}
+      <!-- ── GROUPS ─────────────────────────────────────────────────
+           Visible to superusers or admins with can_create_groups.
+           EXPAND: add "Create Group" link here when admin group
+                   creation is needed.
+      ──────────────────────────────────────────────────────────── -->
       {% if is_super or admin_profile.can_create_groups %}
-        <div class="sidebar-label">Groups</div>
-        <ul class="sidebar-nav">
-          <li><a href="{% url 'admin_panel:group_list' %}">All Groups</a></li>
-        </ul>
+      <div class="sidebar-label">Groups</div>
+      <ul class="sidebar-nav">
+        <li>
+          <a href="{% url 'admin_panel:group_list' %}" data-tooltip="All Groups">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Same two-people icon as Users — reused for groups -->
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+            <span class="nav-text">All Groups</span>
+          </a>
+        </li>
+      </ul>
       {% endif %}
 
-      {# Superadmin section — superusers only, never shown to regular admins #}
+      <!-- ── SUPERADMIN — superusers only ───────────────────────────
+           Never shown to regular admins, even with all permissions.
+           EXPAND: add "Audit Log", "System Settings" links here.
+      ──────────────────────────────────────────────────────────── -->
       {% if is_super %}
-        <div class="sidebar-label">Superadmin</div>
-        <ul class="sidebar-nav">
-          <li><a href="{% url 'admin_panel:manage_admins' %}">Manage Admins</a></li>
-          <li><a href="{% url 'admin_panel:create_admin' %}">Create Admin</a></li>
-        </ul>
+      <div class="sidebar-label">Superadmin</div>
+      <ul class="sidebar-nav">
+        <li>
+          <a href="{% url 'admin_panel:manage_admins' %}" data-tooltip="Manage Admins">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Shield — "security / admin protection" -->
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            <span class="nav-text">Manage Admins</span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'admin_panel:create_admin' %}" data-tooltip="Create Admin">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Shield + plus sign — "add new admin" -->
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              <line x1="12" y1="8" x2="12" y2="14"/>
+              <line x1="9"  y1="11" x2="15" y2="11"/>
+            </svg>
+            <span class="nav-text">Create Admin</span>
+          </a>
+        </li>
+      </ul>
       {% endif %}
 
-      <!--EXPAND: add new sidebar sections here using same pattern:
-         {#% if is_super or ap.can_your_new_permission %#}
-           <div class="sidebar-label">Section Name</div>
-           <ul class="sidebar-nav">
-             <li><a href="{#% url 'admin_panel:your_view' %#}">Link</a></li>
-           </ul>
-         {#% endif %#}
-            #-->
+      {# ── Content management — superadmin only ─────────────────
+           Site Settings, Blog Posts, and Contact Messages.
+           Only shown to superadmins (is_super).
+           EXPAND: expose to admins with can_manage_content if needed.
+      ──────────────────────────────────────────────────────────── #}
+      {% if is_super %}
+      <div class="sidebar-label">Content</div>
+      <ul class="sidebar-nav">
+        <li>
+          <a href="{% url 'admin_panel:site_settings_edit' %}" data-tooltip="Site Settings">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Sliders / settings -->
+              <line x1="4" y1="6"  x2="20" y2="6"/>
+              <line x1="4" y1="12" x2="20" y2="12"/>
+              <line x1="4" y1="18" x2="20" y2="18"/>
+              <circle cx="8"  cy="6"  r="2" fill="currentColor" stroke="none"/>
+              <circle cx="16" cy="12" r="2" fill="currentColor" stroke="none"/>
+              <circle cx="10" cy="18" r="2" fill="currentColor" stroke="none"/>
+            </svg>
+            <span class="nav-text">Site Settings</span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'admin_panel:blog_post_list' %}" data-tooltip="Blog Posts">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Document with lines — "article" -->
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="8" y1="13" x2="16" y2="13"/>
+              <line x1="8" y1="17" x2="12" y2="17"/>
+            </svg>
+            <span class="nav-text">Blog Posts</span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'admin_panel:contact_messages' %}" data-tooltip="Contact Messages">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Envelope — "messages" -->
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+              <polyline points="22,6 12,13 2,6"/>
+            </svg>
+            <span class="nav-text">Contact Messages</span>
+          </a>
+        </li>
+      </ul>
+      {% endif %}
+
+      {# EXPAND: To add a new nav section, copy one of the if/endif blocks    #}
+      {# above (e.g. the Tasks block), paste it here outside this comment,   #}
+      {# and replace: permission name, sidebar-label text, URL name,          #}
+      {# data-tooltip value, SVG icon paths, and nav-text label.              #}
+      {# Collapse behavior is automatic — every link with .nav-icon and       #}
+      {# .nav-text automatically hides its text when the sidebar collapses.   #}
 
     {% endif %}
 
+    <!-- Footer: email hidden when collapsed, sign-out always visible.
+         .sidebar-footer-email wraps the email so CSS can hide it
+         without touching the sign-out link. -->
     <div class="sidebar-footer">
-      {{ request.user.email }}
+      <span class="sidebar-footer-email">{{ request.user.email }}</span>
       <a href="{% url 'admin_panel:admin_logout' %}">Sign out</a>
     </div>
-  </aside>
 
-  <!-- Main content -->
-  <main class="admin-main">
+  </aside><!-- /sidebar -->
+
+
+  <!-- ══════════════════════════════════════════════════════════════
+       MAIN CONTENT
+       id="adminMain" is required — the JS moves its margin-left
+       in sync with the sidebar width when toggled.
+  ══════════════════════════════════════════════════════════════════ -->
+  <main class="admin-main" id="adminMain">
+
     <div class="admin-topbar">
-      <span class="admin-topbar-title">{% block topbar_title %}{% endblock %}</span>
-      <span class="admin-topbar-user">{{ request.user.first_name }} {{ request.user.last_name }}</span>
-    </div>
+
+      <!-- LEFT: hamburger toggle + page title ─────────────────────
+           The toggle button is in the topbar so it's always visible
+           even when the sidebar is collapsed.
+           CUSTOMIZE: swap the SVG for any 18×18 icon you prefer.
+           EXPAND: add a breadcrumb trail after the title span. -->
+      <div style="display:flex; align-items:center; gap:0.75rem;">
+        <button class="sidebar-toggle" id="sidebarToggle"
+                aria-label="Toggle sidebar" title="Toggle sidebar">
+          <!-- Standard hamburger / 3-line menu icon -->
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="3" y1="6"  x2="21" y2="6"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+            <line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+        <span class="admin-topbar-title">{% block topbar_title %}{% endblock %}</span>
+      </div>
+
+      <!-- RIGHT: notification bell + admin name ───────────────────
+           This section is unchanged from the original topbar.
+           EXPAND: add a "Back to user portal" link here. -->
+      <div style="display:flex; align-items:center; gap:0.75rem;">
+
+        <!-- ── Notification bell ─────────────────────────────────────
+             Admins are regular Users too — the same notification
+             endpoints (/users/notifications/count/ and /preview/)
+             work for them without any changes.
+        ──────────────────────────────────────────────────────────── -->
+        {% if request.user.is_authenticated %}
+        <div class="notif-bell" id="notifBell">
+
+          <a href="#" class="notif-bell-btn" id="notifBellBtn"
+             aria-label="Notifications" aria-expanded="false">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+            <span class="notif-badge" id="notifBadge" style="display:none">0</span>
+          </a>
+
+          <div class="notif-dropdown" id="notifDropdown" style="display:none"
+               role="dialog" aria-label="Recent notifications">
+            <div class="notif-dropdown-header">Notifications</div>
+            <div id="notifList">
+              <div class="notif-empty">Loading…</div>
+            </div>
+            <!-- Goes to the user-side notifications page — works for admins too -->
+            <a href="{% url 'notifications_list' %}" class="notif-view-all">
+              View all notifications →
+            </a>
+          </div>
+
+        </div><!-- /notif-bell -->
+        {% endif %}
+
+        <span class="admin-topbar-user">{{ request.user.first_name }} {{ request.user.last_name }}</span>
+      </div>
+
+    </div><!-- /admin-topbar -->
 
     <div class="admin-content">
       {% if messages %}
@@ -382,10 +975,222 @@ EXPAND: add a notifications section in the sidebar.
 
       {% block content %}{% endblock %}
     </div>
-  </main>
 
-  
+  </main><!-- /admin-main -->
+
 
   {% block extra_js %}{% endblock %}
+
+  {% if request.user.is_authenticated %}
+  <script>
+  /* ════════════════════════════════════════════════════════════════════
+     COLLAPSIBLE SIDEBAR — JAVASCRIPT
+     ════════════════════════════════════════════════════════════════════
+
+     WHAT THIS SCRIPT DOES (step by step):
+     ─────────────────────────────────────
+     1. On page load, check localStorage for a saved sidebar state.
+     2. If the user had it collapsed, add the 'collapsed' class to the
+        sidebar and the 'sidebar-collapsed' class to the main element
+        IMMEDIATELY — before re-enabling CSS transitions.
+        This means navigating between pages shows no animation flash;
+        the sidebar just snaps to its saved state.
+     3. Re-enable CSS transitions via requestAnimationFrame. From here on,
+        clicking the toggle will animate smoothly.
+     4. When the toggle button is clicked, toggle the classes and save
+        the new state to localStorage.
+
+     WHY localStorage AND NOT A COOKIE OR SESSION?
+     ──────────────────────────────────────────────
+     localStorage is per-browser, per-origin, and persists indefinitely.
+     A cookie would also work, but localStorage is simpler for pure
+     UI preferences that don't need to reach the server.
+     Session storage would reset on every tab close — not what we want.
+
+     WHY requestAnimationFrame?
+     ──────────────────────────
+     After setting the CSS classes WITHOUT a transition, we need to
+     re-enable the transition. If we do it synchronously, the browser
+     might batch the class-add and the transition-enable into one paint,
+     causing the transition to fire on page load (sidebar slides in
+     every time you navigate). requestAnimationFrame waits for the
+     browser to paint once first, so the first paint is already at the
+     correct width — then transitions kick in for user interactions only.
+
+     HOW TO EXPAND:
+     ──────────────
+     Keyboard shortcut:
+       window.addEventListener('keydown', function(e) {
+         if (e.altKey && e.key === 'b') toggle.click();
+       });
+
+     Auto-collapse on small screens:
+       var ro = new ResizeObserver(function(entries) {
+         if (window.innerWidth < 768) sidebar.classList.add('collapsed');
+       });
+       ro.observe(document.body);
+
+     Swipe to close on mobile:
+       Listen for touchstart/touchend, measure delta X, trigger toggle.
+  ════════════════════════════════════════════════════════════════════ */
+  (function () {
+    'use strict';
+
+    /* localStorage key — change this string if you want a different key name */
+    var KEY     = 'cf_sidebar_collapsed';
+
+    var sidebar = document.getElementById('sidebar');
+    var main    = document.getElementById('adminMain');
+    var toggle  = document.getElementById('sidebarToggle');
+
+    /* Bail out safely if any element is missing (shouldn't happen normally) */
+    if (!sidebar || !main || !toggle) return;
+
+    /* ── Step 1 + 2: Restore saved state without animation ────────────
+       Disable CSS transitions temporarily so the sidebar appears at its
+       saved width instantly — no sliding animation on page load.
+    ──────────────────────────────────────────────────────────────────── */
+    if (localStorage.getItem(KEY) === '1') {
+      sidebar.style.transition = 'none';
+      main.style.transition    = 'none';
+      sidebar.classList.add('collapsed');
+      main.classList.add('sidebar-collapsed');
+
+      /* ── Step 3: Re-enable transitions after first paint ────────────
+         Wait one browser frame so the layout paints at the collapsed
+         width first, THEN re-enable transitions for future clicks.
+      ──────────────────────────────────────────────────────────────── */
+      requestAnimationFrame(function () {
+        sidebar.style.transition = '';
+        main.style.transition    = '';
+      });
+    }
+
+    /* ── Step 4: Toggle on button click ──────────────────────────────
+       classList.toggle(class) returns:
+         true  → class was ADDED   = sidebar is NOW collapsed
+         false → class was REMOVED = sidebar is NOW expanded
+       We save that boolean as '1' (collapsed) or '0' (expanded).
+    ──────────────────────────────────────────────────────────────────── */
+    toggle.addEventListener('click', function () {
+      var isNowCollapsed = sidebar.classList.toggle('collapsed');
+      main.classList.toggle('sidebar-collapsed');
+      localStorage.setItem(KEY, isNowCollapsed ? '1' : '0');
+    });
+
+  }());
+  </script>
+
+  <script>
+  /* ════════════════════════════════════════════════════════════════════
+     NOTIFICATION BELL — base_admin.html
+     Identical logic to base.html. Same AJAX endpoints work here
+     because admins are regular Django users with the same session.
+     EXPAND: fetch only admin-relevant notifications by adding a
+             ?for=admin query param to the endpoint.
+  ════════════════════════════════════════════════════════════════════ */
+  (function () {
+    'use strict';
+
+    var bell     = document.getElementById('notifBell');
+    var btn      = document.getElementById('notifBellBtn');
+    var dropdown = document.getElementById('notifDropdown');
+    var badge    = document.getElementById('notifBadge');
+    var list     = document.getElementById('notifList');
+
+    if (!bell) return;
+
+    var URL_COUNT   = '{% url "notifications_count" %}';
+    var URL_PREVIEW = '{% url "notifications_preview" %}';
+    var URL_ALL     = '{% url "notifications_list" %}';
+
+    /* Update the red badge number — called on load and every 30s */
+    function fetchCount() {
+      fetch(URL_COUNT)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.count > 0) {
+            badge.textContent   = data.count > 99 ? '99+' : data.count;
+            badge.style.display = 'flex';
+          } else {
+            badge.style.display = 'none';
+          }
+        })
+        .catch(function() {});  /* silently ignore network errors */
+    }
+
+    /* Fill dropdown with up to 5 most recent notifications */
+    function fetchPreview() {
+      list.innerHTML = '<div class="notif-empty">Loading\u2026</div>';
+      fetch(URL_PREVIEW)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          /* Sync badge with the preview response */
+          if (data.unread_count > 0) {
+            badge.textContent   = data.unread_count > 99 ? '99+' : data.unread_count;
+            badge.style.display = 'flex';
+          } else {
+            badge.style.display = 'none';
+          }
+
+          if (data.notifications.length === 0) {
+            list.innerHTML = '<div class="notif-empty">No notifications yet</div>';
+            return;
+          }
+
+          /* Build HTML — always escape user-generated text to prevent XSS */
+          list.innerHTML = data.notifications.map(function(n) {
+            return (
+              '<a href="' + URL_ALL + '" class="notif-item ' + (n.is_read ? '' : 'unread') + '">' +
+                esc(n.message) +
+                '<div class="notif-item-date">' + esc(n.created_at) + '</div>' +
+              '</a>'
+            );
+          }).join('');
+        })
+        .catch(function() {
+          list.innerHTML = '<div class="notif-empty">Could not load notifications</div>';
+        });
+    }
+
+    /* XSS protection — always escape before inserting into innerHTML.
+       Replaces the 5 characters that HTML interprets as markup. */
+    function esc(str) {
+      return String(str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    /* Toggle dropdown open/close */
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (dropdown.style.display !== 'none') { closeDropdown(); } else { openDropdown(); }
+    });
+
+    function openDropdown() {
+      dropdown.style.display = 'block';
+      btn.setAttribute('aria-expanded', 'true');
+      fetchPreview();
+    }
+
+    function closeDropdown() {
+      dropdown.style.display = 'none';
+      btn.setAttribute('aria-expanded', 'false');
+    }
+
+    /* Close when clicking anywhere outside the bell component */
+    document.addEventListener('click', function(e) {
+      if (!bell.contains(e.target)) closeDropdown();
+    });
+
+    /* Run immediately on load, then every 30 seconds */
+    fetchCount();
+    setInterval(fetchCount, 30000);
+
+  }());
+  </script>
+  {% endif %}
+
 </body>
 </html>

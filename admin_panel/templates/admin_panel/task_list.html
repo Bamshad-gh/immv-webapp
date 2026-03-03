@@ -39,12 +39,12 @@ Context from view:
     Completed
   </a>
   <span style="width:1px; background:var(--border); margin:0 0.25rem;"></span>
-  <a href="?type=admin_to_user"
-     class="btn btn-sm {% if type_filter == 'admin_to_user' %}btn-primary{% else %}btn-outline{% endif %}">
+  <a href="?type=user"
+     class="btn btn-sm {% if type_filter == 'user' %}btn-primary{% else %}btn-outline{% endif %}">
     → Users
   </a>
-  <a href="?type=admin_to_admin"
-     class="btn btn-sm {% if type_filter == 'admin_to_admin' %}btn-primary{% else %}btn-outline{% endif %}">
+  <a href="?type=admin"
+     class="btn btn-sm {% if type_filter == 'admin' %}btn-primary{% else %}btn-outline{% endif %}">
     → Admins
   </a>
 </div>
@@ -93,6 +93,7 @@ Context from view:
                     <span class="text-muted">—</span>
                 {% endif %}
             </td>
+            <td>
               {% if task.due_date %}
                 <span {% if task.is_overdue %}style="color:var(--danger); font-weight:600;"{% endif %}>
                   {{ task.due_date|date:"M d, Y" }}
@@ -115,8 +116,7 @@ Context from view:
                 <span class="text-muted">—</span>
               {% endif %}
             </td>
-            <td>
-              <td style="display:flex; gap:0.4rem;">
+            <td style="display:flex; gap:0.4rem;">
                 <a href="{% url 'admin_panel:task_detail' task.id %}"
                     class="btn btn-sm btn-outline">Open</a>
                 <form method="POST" action="{% url 'admin_panel:task_delete' task.id %}">
@@ -124,7 +124,7 @@ Context from view:
                     <button type="submit" class="btn btn-sm btn-danger"
                             onclick="return confirm('Delete this task?')">Delete</button>
                 </form>
-                </td>
+            </td>
           </tr>
         {% endfor %}
       </tbody>

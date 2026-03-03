@@ -3,7 +3,8 @@
 FILE: admin_panel/templates/admin_panel/task_create.html
 Context from view:
   errors        — dict of field: error message
-  all_users     — all active users for the dropdown
+  regular_users — active non-staff users (task_type='user')
+  admin_users   — active staff users    (task_type='admin')
   all_cases     — last 50 active cases for optional link
   type_choices  — Task.TYPE_CHOICES
   post          — request.POST for re-filling form on error
@@ -25,7 +26,7 @@ Context from view:
 
       <div class="form-group">
         <label>Task Type</label>
-        <select name="type" required>
+        <select name="type" id="taskTypeSelect" required>
           <option value="">Select type...</option>
           {% for value, label in type_choices %}
             <option value="{{ value }}"
@@ -65,15 +66,36 @@ Context from view:
 
       <div class="form-group">
         <label>Assign To</label>
-        <select name="assigned_to" required>
-          <option value="">Select person...</option>
-          {% for user in all_users %}
-            <option value="{{ user.id }}"
-              {% if post.assigned_to == user.id|stringformat:'s' %}selected{% endif %}>
-              {{ user.email }}{% if user.is_staff %} (admin){% endif %}
+
+        {# Search box — not a form field (no name), never submitted #}
+        <input type="text" id="assignSearch"
+               placeholder="Search by email..."
+               autocomplete="off"
+               style="margin-bottom:0.4rem;">
+
+        {# Regular (non-staff) users — shown when task type = user #}
+        <select name="assigned_to" id="selectUsers" required>
+          <option value="">Select user...</option>
+          {% for u in regular_users %}
+            <option value="{{ u.id }}"
+              {% if post.assigned_to == u.id|stringformat:'s' %}selected{% endif %}>
+              {{ u.email }}
             </option>
           {% endfor %}
         </select>
+
+        {# Admin (staff) users — shown when task type = admin; disabled so it is NOT submitted #}
+        <select name="assigned_to" id="selectAdmins" disabled
+                style="display:none; margin-top:0;">
+          <option value="">Select admin...</option>
+          {% for u in admin_users %}
+            <option value="{{ u.id }}"
+              {% if post.assigned_to == u.id|stringformat:'s' %}selected{% endif %}>
+              {{ u.email }}
+            </option>
+          {% endfor %}
+        </select>
+
         {% if errors.assigned_to %}
           <p style="color:var(--danger); font-size:0.8rem; margin-top:0.25rem;">
             {{ errors.assigned_to }}
@@ -134,4 +156,88 @@ Context from view:
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  'use strict';
+
+  var typeSelect   = document.getElementById('taskTypeSelect');
+  var searchInput  = document.getElementById('assignSearch');
+  var selectUsers  = document.getElementById('selectUsers');
+  var selectAdmins = document.getElementById('selectAdmins');
+
+  if (!typeSelect || !searchInput || !selectUsers || !selectAdmins) return;
+
+  // Snapshot full option lists once at page-load so we can restore them on search clear.
+  // We store plain objects {value, text} — avoids cloning DOM nodes.
+  function snapshotOptions(select) {
+    var opts = [];
+    for (var i = 0; i < select.options.length; i++) {
+      opts.push({ value: select.options[i].value, text: select.options[i].text });
+    }
+    return opts;
+  }
+  var userOpts  = snapshotOptions(selectUsers);
+  var adminOpts = snapshotOptions(selectAdmins);
+
+  // Rebuild a select's <option> list so only items matching `query` appear.
+  // The blank placeholder (value="") is always kept regardless of query.
+  function rebuildOptions(select, opts, query) {
+    var q = query.trim().toLowerCase();
+    select.innerHTML = '';
+    for (var i = 0; i < opts.length; i++) {
+      var o = opts[i];
+      // Always show placeholder; otherwise filter by email text
+      if (o.value === '' || o.text.toLowerCase().indexOf(q) !== -1) {
+        var el = document.createElement('option');
+        el.value = o.value;
+        el.text  = o.text;
+        select.appendChild(el);
+      }
+    }
+  }
+
+  // Show the correct select for the chosen task type, hide the other.
+  // `disabled` prevents the hidden select from being submitted.
+  function switchSelect(typeValue) {
+    var showUsers = (typeValue === 'user');  // Task.TYPE_CHOICES: 'user' / 'admin'
+
+    searchInput.value = '';  // clear search when type changes
+
+    if (showUsers) {
+      selectAdmins.disabled = true;
+      selectAdmins.style.display = 'none';
+      selectUsers.disabled = false;
+      selectUsers.style.display = '';
+      rebuildOptions(selectUsers, userOpts, '');
+    } else {
+      selectUsers.disabled = true;
+      selectUsers.style.display = 'none';
+      selectAdmins.disabled = false;
+      selectAdmins.style.display = '';
+      rebuildOptions(selectAdmins, adminOpts, '');
+    }
+  }
+
+  // Run on task-type change
+  typeSelect.addEventListener('change', function () {
+    switchSelect(this.value);
+  });
+
+  // Live search — rebuilds the currently-visible select
+  searchInput.addEventListener('input', function () {
+    var q = this.value;
+    if (!selectUsers.disabled) {
+      rebuildOptions(selectUsers, userOpts, q);
+    } else {
+      rebuildOptions(selectAdmins, adminOpts, q);
+    }
+  });
+
+  // Set correct initial state (handles page re-load after validation error)
+  switchSelect(typeSelect.value);
+}());
+</script>
 {% endblock %}

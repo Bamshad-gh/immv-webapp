@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Invoice — {{ invoice.title }}{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">{{ invoice.title }}</h1>
+      <p class="page-subtitle">
+        Issued {{ invoice.created_at|date:"M d, Y" }}
+        {% if invoice.related_case %}
+          · Case #{{ invoice.related_case.id }}
+        {% endif %}
+      </p>
+    </div>
+    <div style="display:flex; align-items:center; gap:0.75rem;">
+      <span class="badge badge-{{ invoice.status }}"
+            style="font-size:0.85rem; padding:0.4rem 0.9rem;">
+        {{ invoice.get_status_display }}
+      </span>
+      <a href="{% url 'payments:invoice_list' %}" class="btn btn-outline">← Invoices</a>
+    </div>
+  </div>
+
+  <div style="display:grid; grid-template-columns:2fr 1fr; gap:1rem; align-items:start;">
+
+    {# ── LEFT — Invoice details + payment history ── #}
+    <div>
+
+      {# Description #}
+      {% if invoice.description %}
+        <div class="card" style="margin-bottom:1rem;">
+          <div class="card-header">Details</div>
+          <p style="font-size:0.9rem; color:var(--slate); white-space:pre-line;">
+            {{ invoice.description }}
+          </p>
+        </div>
+      {% endif %}
+
+      {# Payment history #}
+      <div class="card">
+        <div class="card-header">Payment History</div>
+        {% if payments %}
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Amount</th>
+                <th>Reference</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for payment in payments %}
+                <tr>
+                  <td class="text-muted">{{ payment.marked_at|date:"M d, Y" }}</td>
+                  <td style="font-weight:500;">
+                    {{ invoice.currency }} {{ payment.amount }}
+                  </td>
+                  <td>
+                    {# Only show reference when admin provided a real one (bank ID, cheque no., etc.) #}
+                    {# Auto-generated UUIDs are meaningless to users — show a dash instead #}
+                    {% if payment.reference_is_auto %}
+                      <span class="text-muted">—</span>
+                    {% else %}
+                      <span style="font-size:0.8rem; font-family:monospace; color:var(--slate);">
+                        {{ payment.reference }}
+                      </span>
+                    {% endif %}
+                  </td>
+                  <td class="text-muted">{{ payment.notes|default:"—" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="empty-state" style="padding:2rem 1rem;">
+            <p class="text-muted">No payments recorded yet.</p>
+          </div>
+        {% endif %}
+      </div>
+
+    </div>
+
+    {# ── RIGHT — Balance summary ── #}
+    <div class="card">
+      <div class="card-header">Summary</div>
+
+      <table style="width:100%; font-size:0.9rem;">
+        <tr>
+          <td class="text-muted" style="padding:0.5rem 0;">Total amount</td>
+          <td style="text-align:right; padding:0.5rem 0; font-weight:500;">
+            {{ invoice.currency }} {{ invoice.amount }}
+          </td>
+        </tr>
+        <tr>
+          <td class="text-muted" style="padding:0.5rem 0;">Total paid</td>
+          <td style="text-align:right; padding:0.5rem 0; color:var(--success);">
+            {{ invoice.currency }} {{ invoice.total_paid }}
+          </td>
+        </tr>
+        <tr style="border-top:2px solid var(--border);">
+          <td style="padding:0.75rem 0 0.25rem; font-weight:600;">Balance due</td>
+          <td style="text-align:right; padding:0.75rem 0 0.25rem;
+                     font-weight:700; font-size:1.1rem;
+                     {% if invoice.balance_due > 0 %}color:var(--danger);{% else %}color:var(--success);{% endif %}">
+            {{ invoice.currency }} {{ invoice.balance_due }}
+          </td>
+        </tr>
+      </table>
+
+      {% if invoice.due_date %}
+        <div style="margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border);
+                    font-size:0.85rem;">
+          <span class="text-muted">Due date:</span>
+          <strong {% if invoice.is_overdue %}style="color:var(--danger);"{% endif %}>
+            {{ invoice.due_date|date:"M d, Y" }}
+            {% if invoice.is_overdue %} — OVERDUE{% endif %}
+          </strong>
+        </div>
+      {% endif %}
+
+      {% if invoice.related_case %}
+        <div style="margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border);
+                    font-size:0.85rem;">
+          <span class="text-muted">Related to:</span>
+          <a href="{% url 'cases:case-detail' invoice.related_case.id %}"
+             style="color:var(--amber); text-decoration:none; font-weight:500;">
+            Case #{{ invoice.related_case.id }} — {{ invoice.related_case.category.name }}
+          </a>
+        </div>
+      {% endif %}
+
+      <div style="margin-top:1.25rem; padding-top:1rem; border-top:1px solid var(--border);
+                  font-size:0.8rem; color:var(--slate);">
+        To make a payment, contact your case manager. They will record the
+        payment and update your balance.
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

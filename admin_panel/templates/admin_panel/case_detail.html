@@ -65,10 +65,17 @@
       {% if case.managed_profile %}· For {{ case.managed_profile.full_name }}{% endif %}
     </p>
   </div>
-  <span class="badge badge-{{ case.status }}"
-        style="font-size:0.8rem; padding:0.4rem 0.9rem;">
-    {{ case.status }}
-  </span>
+  <div style="display:flex; align-items:center; gap:0.75rem;">
+    <a href="{% url 'admin_panel:export_case_requirements' case.id %}"
+       class="btn btn-outline"
+       style="font-size:0.85rem;">
+      ↓ Export Excel
+    </a>
+    <span class="badge badge-{{ case.status }}"
+          style="font-size:0.8rem; padding:0.4rem 0.9rem;">
+      {{ case.status }}
+    </span>
+  </div>
 </div>
 
 <div style="display:grid; grid-template-columns:2fr 1fr; gap:1rem; align-items:start;">
@@ -192,7 +199,7 @@
                            name="answer_value"
                            value="{{ row.answer.answer_number|default:'' }}">
 
-                  {% elif row.req.type == 'file' %}
+                  {% elif row.req.type == 'file' or row.req.type == 'document' %}
                     <label>Upload New File</label>
                     <input type="file" name="answer_file">
                     {% if row.answer.answer_file %}
@@ -263,9 +270,7 @@
             Add
           </button>
         </form>
-      </div>
-   
-   
+      </div> 
      {% else %}
       <p style="margin-top:1rem; color:var(--slate);">
         All requirements for this category are already added to the case.

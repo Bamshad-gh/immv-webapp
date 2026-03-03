@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  {# ── SEO: title ── override in child templates with {% block meta_title %} #}
+  <title>{% block meta_title %}{{ site_settings.company_name }}{% endblock %} — {{ site_settings.company_name }}</title>
+
+  {# ── SEO: description ── override per page #}
+  <meta name="description"
+        content="{% block meta_description %}{{ site_settings.tagline }}{% endblock %}">
+
+  {# ── Open Graph (social sharing previews) ── #}
+  <meta property="og:type"        content="website">
+  <meta property="og:site_name"   content="{{ site_settings.company_name }}">
+  <meta property="og:title"
+        content="{% block og_title %}{{ site_settings.company_name }}{% endblock %}">
+  <meta property="og:description"
+        content="{% block og_description %}{{ site_settings.tagline }}{% endblock %}">
+  {% block og_image %}{% endblock %}
+
+  {# ── Fonts — same as user portal ── #}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
+
+  <style>
+    /* ═══════════════════════════════════════════════════════════
+       CSS VARIABLES — shared with base.html (user portal).
+       Change these once to retheme the entire site.
+       EXPAND: add --primary-color from SiteSettings for live theming.
+    ═══════════════════════════════════════════════════════════ */
+    :root {
+      --navy:        #0f1923;
+      --cream:       #f7f5f0;
+      --amber:       #c8820a;
+      --amber-light: #f5e6c8;
+      --slate:       #4a5568;
+      --border:      #e2ddd6;
+      --white:       #ffffff;
+      --danger:      #c0392b;
+      --success:     #2e7d52;
+      --font-serif:  'Instrument Serif', Georgia, serif;
+      --font-sans:   'DM Sans', system-ui, sans-serif;
+      --max-width:   1200px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--white);
+      color: var(--navy);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    /* ── PUBLIC NAV ──────────────────────────────────────────── */
+    .pub-nav {
+      background: var(--navy);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .pub-nav-inner {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 0 2rem;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 2rem;
+    }
+
+    .pub-nav-brand {
+      font-family: var(--font-serif);
+      font-size: 1.4rem;
+      color: var(--white);
+      text-decoration: none;
+      letter-spacing: 0.02em;
+      flex-shrink: 0;
+    }
+
+    .pub-nav-brand span { color: var(--amber); }
+
+    .pub-nav-links {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      list-style: none;
+    }
+
+    .pub-nav-links a {
+      color: rgba(255,255,255,0.72);
+      text-decoration: none;
+      padding: 0.4rem 1rem;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .pub-nav-links a:hover,
+    .pub-nav-links a.active { color: var(--white); }
+
+    .pub-nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-shrink: 0;
+    }
+
+    .pub-nav-actions .nav-signin {
+      color: rgba(255,255,255,0.65);
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 500;
+      padding: 0.4rem 0.75rem;
+      border-radius: 4px;
+      transition: color 0.15s;
+    }
+    .pub-nav-actions .nav-signin:hover { color: var(--white); }
+
+    .pub-nav-actions .nav-cta {
+      background: var(--amber);
+      color: var(--white);
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 0.5rem 1.25rem;
+      border-radius: 4px;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .pub-nav-actions .nav-cta:hover { background: #b5720a; }
+
+    /* ── MAIN CONTENT WRAPPER ─────────────────────────────────── */
+    .pub-main { min-height: 70vh; }
+
+    /* ── SECTION HELPERS ─────────────────────────────────────── */
+    .section {
+      padding: 5rem 2rem;
+    }
+
+    .section-cream { background: var(--cream); }
+    .section-white { background: var(--white); }
+    .section-navy  { background: var(--navy); color: var(--white); }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    .section-title {
+      font-family: var(--font-serif);
+      font-size: clamp(1.75rem, 3vw, 2.5rem);
+      font-weight: 400;
+      line-height: 1.25;
+      margin-bottom: 0.75rem;
+    }
+
+    .section-subtitle {
+      color: var(--slate);
+      font-size: 1.05rem;
+      max-width: 600px;
+      margin-bottom: 2.5rem;
+    }
+
+    .section-navy .section-subtitle { color: rgba(255,255,255,0.65); }
+
+    /* ── CARDS ─────────────────────────────────────────────────── */
+    .pub-card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      padding: 2rem;
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+
+    .pub-card:hover {
+      box-shadow: 0 6px 24px rgba(15,25,35,0.08);
+      transform: translateY(-2px);
+    }
+
+    .pub-card-title {
+      font-family: var(--font-serif);
+      font-size: 1.2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .pub-card-text {
+      color: var(--slate);
+      font-size: 0.95rem;
+      line-height: 1.6;
+    }
+
+    /* Card grid helpers */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .cards-grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 1.25rem;
+    }
+
+    /* ── BUTTONS ─────────────────────────────────────────────── */
+    .pub-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.75rem;
+      font-family: var(--font-sans);
+      font-size: 0.95rem;
+      font-weight: 600;
+      border: 2px solid transparent;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.15s;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .pub-btn-primary {
+      background: var(--amber);
+      color: var(--white);
+      border-color: var(--amber);
+    }
+    .pub-btn-primary:hover { background: #b5720a; border-color: #b5720a; }
+
+    .pub-btn-outline {
+      background: transparent;
+      color: var(--white);
+      border-color: rgba(255,255,255,0.4);
+    }
+    .pub-btn-outline:hover { border-color: var(--white); background: rgba(255,255,255,0.06); }
+
+    .pub-btn-outline-dark {
+      background: transparent;
+      color: var(--navy);
+      border-color: var(--border);
+    }
+    .pub-btn-outline-dark:hover { border-color: var(--navy); }
+
+    /* ── FORMS (public contact form) ──────────────────────────── */
+    .pub-form-group { margin-bottom: 1.25rem; }
+
+    .pub-label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--slate);
+      margin-bottom: 0.4rem;
+    }
+
+    .pub-input,
+    .pub-textarea,
+    .pub-select {
+      width: 100%;
+      padding: 0.7rem 1rem;
+      font-family: var(--font-sans);
+      font-size: 0.95rem;
+      color: var(--navy);
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .pub-input:focus,
+    .pub-textarea:focus { border-color: var(--amber); }
+
+    .pub-textarea { resize: vertical; min-height: 120px; }
+
+    .pub-form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    /* ── BADGES ──────────────────────────────────────────────── */
+    .pub-tag {
+      display: inline-block;
+      padding: 0.2rem 0.75rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      background: var(--amber-light);
+      color: #7a4f06;
+      border-radius: 2px;
+    }
+
+    /* ── FLASH MESSAGES ─────────────────────────────────────── */
+    .pub-messages {
+      max-width: var(--max-width);
+      margin: 1.5rem auto 0;
+      padding: 0 2rem;
+    }
+
+    .pub-alert {
+      padding: 0.875rem 1.25rem;
+      font-size: 0.9rem;
+      border-left: 3px solid;
+      margin-bottom: 0.75rem;
+      border-radius: 2px;
+    }
+
+    .pub-alert-success {
+      background: #f0faf4;
+      border-color: var(--success);
+      color: var(--success);
+    }
+
+    .pub-alert-error {
+      background: #fdf0ef;
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .pub-alert-info {
+      background: var(--amber-light);
+      border-color: var(--amber);
+      color: #7a4f06;
+    }
+
+    /* ── FOOTER ──────────────────────────────────────────────── */
+    .pub-footer {
+      background: var(--navy);
+      color: rgba(255,255,255,0.7);
+      padding: 4rem 2rem 2rem;
+    }
+
+    .pub-footer-grid {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 3rem;
+      padding-bottom: 3rem;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .pub-footer-brand {
+      font-family: var(--font-serif);
+      font-size: 1.4rem;
+      color: var(--white);
+      text-decoration: none;
+      display: block;
+      margin-bottom: 0.75rem;
+    }
+    .pub-footer-brand span { color: var(--amber); }
+
+    .pub-footer-tagline {
+      font-size: 0.9rem;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 1.25rem;
+      max-width: 280px;
+      line-height: 1.6;
+    }
+
+    .pub-footer-social {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .pub-footer-social a {
+      color: rgba(255,255,255,0.5);
+      font-size: 0.8rem;
+      text-decoration: none;
+      padding: 0.35rem 0.75rem;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+    .pub-footer-social a:hover { color: var(--white); border-color: rgba(255,255,255,0.3); }
+
+    .pub-footer-heading {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.4);
+      margin-bottom: 1rem;
+    }
+
+    .pub-footer-links { list-style: none; }
+
+    .pub-footer-links li { margin-bottom: 0.5rem; }
+
+    .pub-footer-links a {
+      color: rgba(255,255,255,0.6);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: color 0.15s;
+    }
+    .pub-footer-links a:hover { color: var(--white); }
+
+    .pub-footer-contact p {
+      font-size: 0.9rem;
+      color: rgba(255,255,255,0.6);
+      margin-bottom: 0.5rem;
+    }
+
+    .pub-footer-contact a {
+      color: rgba(255,255,255,0.6);
+      text-decoration: none;
+    }
+    .pub-footer-contact a:hover { color: var(--white); }
+
+    .pub-footer-bottom {
+      max-width: var(--max-width);
+      margin: 1.5rem auto 0;
+      font-size: 0.8rem;
+      color: rgba(255,255,255,0.3);
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    /* ── RESPONSIVE ──────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .pub-footer-grid {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+      }
+
+      .pub-nav-links { display: none; }   /* EXPAND: add hamburger menu */
+
+      .pub-form-row { grid-template-columns: 1fr; }
+
+      .cards-grid { grid-template-columns: 1fr; }
+      .cards-grid-2 { grid-template-columns: 1fr; }
+    }
+
+    /* ── UTILITY ────────────────────────────────────────────── */
+    .text-center  { text-align: center; }
+    .text-amber   { color: var(--amber); }
+    .text-muted   { color: var(--slate); }
+    .mt-1 { margin-top: 0.5rem; }
+    .mt-2 { margin-top: 1rem; }
+    .mt-3 { margin-top: 1.5rem; }
+    .mt-4 { margin-top: 2rem; }
+    .mb-2 { margin-bottom: 1rem; }
+    .mb-3 { margin-bottom: 1.5rem; }
+  </style>
+{# ── Dynamic color overrides from Admin Panel → Content → Site Settings ── #}
+{% if site_settings.color_primary or site_settings.color_accent or site_settings.color_accent_light or site_settings.color_background %}
+<style>
+  :root {
+    {% if site_settings.color_primary %}--navy: {{ site_settings.color_primary }};{% endif %}
+    {% if site_settings.color_accent %}--amber: {{ site_settings.color_accent }};{% endif %}
+    {% if site_settings.color_accent_light %}--amber-light: {{ site_settings.color_accent_light }};{% endif %}
+    {% if site_settings.color_background %}--cream: {{ site_settings.color_background }};{% endif %}
+  }
+</style>
+{% endif %}
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+  {# ── PUBLIC NAV ────────────────────────────────────────────── #}
+  <nav class="pub-nav" aria-label="Main navigation">
+    <div class="pub-nav-inner">
+
+      {# Brand / logo — links to homepage #}
+      <a href="{% url 'main_site:home' %}" class="pub-nav-brand">
+        {% if site_settings.logo %}
+          <img src="{{ site_settings.logo.url }}" alt="{{ site_settings.company_name }}"
+               style="height:36px; object-fit:contain;">
+        {% else %}
+          {# Text logo fallback — amber accent on last letter group #}
+          {{ site_settings.company_name|slice:":-4" }}<span>{{ site_settings.company_name|slice:"-4:" }}</span>
+        {% endif %}
+      </a>
+
+      {# Navigation links #}
+      <ul class="pub-nav-links">
+        <li><a href="{% url 'main_site:services' %}"
+               {% if request.resolver_match.url_name == 'services' or request.resolver_match.url_name == 'service_detail' %}class="active"{% endif %}
+               >Services</a></li>
+        <li><a href="{% url 'main_site:about' %}"
+               {% if request.resolver_match.url_name == 'about' %}class="active"{% endif %}
+               >About</a></li>
+        <li><a href="{% url 'main_site:blog' %}"
+               {% if request.resolver_match.url_name == 'blog' or request.resolver_match.url_name == 'blog_detail' %}class="active"{% endif %}
+               >Blog</a></li>
+        <li><a href="{% url 'main_site:contact' %}"
+               {% if request.resolver_match.url_name == 'contact' %}class="active"{% endif %}
+               >Contact</a></li>
+      </ul>
+
+      {# CTA actions #}
+      <div class="pub-nav-actions">
+        <a href="{% url 'login' %}" class="nav-signin">Sign In</a>
+        <a href="{% url 'main_site:contact' %}" class="nav-cta">
+          {{ site_settings.hero_cta_text }} →
+        </a>
+      </div>
+
+    </div>
+  </nav>
+
+  {# ── FLASH MESSAGES ────────────────────────────────────────── #}
+  {% if messages %}
+    <div class="pub-messages">
+      {% for message in messages %}
+        <div class="pub-alert pub-alert-{{ message.tags }}">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {# ── PAGE CONTENT ─────────────────────────────────────────── #}
+  <main class="pub-main">
+    {% block content %}{% endblock %}
+  </main>
+
+  {# ── FOOTER ────────────────────────────────────────────────── #}
+  <footer class="pub-footer">
+    <div class="pub-footer-grid">
+
+      {# Column 1 — Brand + tagline + social #}
+      <div>
+        <a href="{% url 'main_site:home' %}" class="pub-footer-brand">
+          {{ site_settings.company_name|slice:":-4" }}<span>{{ site_settings.company_name|slice:"-4:" }}</span>
+        </a>
+        <p class="pub-footer-tagline">{{ site_settings.tagline }}</p>
+
+        {# Social links — only shown when URLs are set in SiteSettings #}
+        {% if site_settings.linkedin_url or site_settings.instagram_url %}
+          <div class="pub-footer-social">
+            {% if site_settings.linkedin_url %}
+              <a href="{{ site_settings.linkedin_url }}" target="_blank" rel="noopener">LinkedIn</a>
+            {% endif %}
+            {% if site_settings.instagram_url %}
+              <a href="{{ site_settings.instagram_url }}" target="_blank" rel="noopener">Instagram</a>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+
+      {# Column 2 — Quick links #}
+      <div>
+        <p class="pub-footer-heading">Quick Links</p>
+        <ul class="pub-footer-links">
+          <li><a href="{% url 'main_site:home' %}">Home</a></li>
+          <li><a href="{% url 'main_site:services' %}">Services</a></li>
+          <li><a href="{% url 'main_site:about' %}">About Us</a></li>
+          <li><a href="{% url 'main_site:blog' %}">Blog</a></li>
+          <li><a href="{% url 'main_site:contact' %}">Contact</a></li>
+          <li><a href="{% url 'login' %}">Client Portal</a></li>
+        </ul>
+      </div>
+
+      {# Column 3 — Contact info from SiteSettings #}
+      <div class="pub-footer-contact">
+        <p class="pub-footer-heading">Contact</p>
+        {% if site_settings.contact_email %}
+          <p><a href="mailto:{{ site_settings.contact_email }}">{{ site_settings.contact_email }}</a></p>
+        {% endif %}
+        {% if site_settings.contact_phone %}
+          <p><a href="tel:{{ site_settings.contact_phone }}">{{ site_settings.contact_phone }}</a></p>
+        {% endif %}
+        {% if site_settings.address %}
+          <p style="margin-top:0.75rem; white-space:pre-line;">{{ site_settings.address }}</p>
+        {% endif %}
+      </div>
+
+    </div>
+
+    <div class="pub-footer-bottom">
+      <span>&copy; {% now "Y" %} {{ site_settings.company_name }}. All rights reserved.</span>
+      <span>Professional Immigration Services</span>
+    </div>
+  </footer>
+
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

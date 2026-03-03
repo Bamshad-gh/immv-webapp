@@ -133,6 +133,11 @@ def group_detail(request, group_id):
 
 @login_required
 def group_create(request):
+    # Only users explicitly granted this permission by an admin can create groups.
+    if not request.user.can_create_group:
+        messages.error(request, 'You do not have permission to create groups.')
+        return redirect('groups:group_dashboard')
+
     if request.method == 'POST':
         form = GroupCreateForm(request.POST, user=request.user)
         if form.is_valid():

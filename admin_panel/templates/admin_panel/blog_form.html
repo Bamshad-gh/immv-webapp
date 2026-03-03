@@ -1,0 +1,135 @@
+{% extends "admin_panel/base_admin.html" %}
+
+{% if post %}
+  {% block title %}Edit Post — {{ post.title }}{% endblock %}
+  {% block topbar_title %}Edit Post{% endblock %}
+{% else %}
+  {% block title %}New Blog Post{% endblock %}
+  {% block topbar_title %}New Blog Post{% endblock %}
+{% endif %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{% if post %}Edit Post{% else %}New Blog Post{% endif %}</h1>
+    <p class="page-subtitle">
+      {% if post %}
+        Last updated {{ post.updated_at|date:"M d, Y" }}
+      {% else %}
+        Slug is auto-generated from the title.
+      {% endif %}
+    </p>
+  </div>
+  <a href="{% url 'admin_panel:blog_post_list' %}" class="btn btn-outline">← Blog Posts</a>
+</div>
+
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert alert-{{ message.tags }}" style="margin-bottom:1rem;">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+
+<form method="POST"
+      action="{% if post %}{% url 'admin_panel:blog_post_edit' post.id %}{% else %}{% url 'admin_panel:blog_post_create' %}{% endif %}"
+      enctype="multipart/form-data">
+  {% csrf_token %}
+
+  <div style="display:grid; grid-template-columns:2fr 1fr; gap:1rem; align-items:start;">
+
+    {# LEFT — main content #}
+    <div>
+      <div class="card" style="margin-bottom:1rem;">
+        <div class="card-header">Content</div>
+
+        <div class="form-group">
+          <label>Title <span style="color:var(--danger);">*</span></label>
+          <input type="text" name="title"
+                 value="{{ post.title|default:'' }}"
+                 placeholder="Article title" required>
+        </div>
+
+        <div class="form-group">
+          <label>Body <span style="color:var(--danger);">*</span></label>
+          <textarea name="body" rows="18"
+                    placeholder="Write your article here…" required>{{ post.body|default:'' }}</textarea>
+          <p style="font-size:0.75rem; color:var(--slate); margin-top:0.3rem;">
+            Plain text. Line breaks are preserved.
+            {# EXPAND: swap textarea for a rich text editor like CKEditor #}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    {# RIGHT — meta + publish #}
+    <div>
+      <div class="card" style="margin-bottom:1rem;">
+        <div class="card-header">SEO</div>
+
+        <div class="form-group">
+          <label>Meta Description</label>
+          <textarea name="meta_description" rows="3"
+                    maxlength="160"
+                    placeholder="Shown in Google search results (max 160 chars)">{{ post.meta_description|default:'' }}</textarea>
+          <p style="font-size:0.75rem; color:var(--slate); margin-top:0.25rem;">
+            Keep under 160 characters for best SEO results.
+          </p>
+        </div>
+
+        {% if post %}
+          <div class="form-group">
+            <label>URL Slug</label>
+            <input type="text" value="{{ post.slug }}" disabled
+                   style="background:var(--cream); color:var(--slate);">
+            <p style="font-size:0.75rem; color:var(--slate); margin-top:0.25rem;">
+              Slug is set once on creation and cannot be changed.
+            </p>
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="card" style="margin-bottom:1rem;">
+        <div class="card-header">Thumbnail</div>
+
+        {% if post.thumbnail %}
+          <div style="margin-bottom:0.75rem;">
+            <img src="{{ post.thumbnail.url }}" alt="Thumbnail"
+                 style="width:100%; max-height:160px; object-fit:cover; border:1px solid var(--border);">
+            <p style="font-size:0.75rem; color:var(--slate); margin-top:0.25rem;">
+              Upload a new image to replace.
+            </p>
+          </div>
+        {% endif %}
+
+        <input type="file" name="thumbnail" accept="image/*">
+      </div>
+
+      <div class="card">
+        <div class="card-header">Publish</div>
+
+        <div class="form-group" style="display:flex; align-items:center; gap:0.75rem;">
+          <input type="checkbox" name="is_published" id="id_is_published"
+                 {% if post.is_published %}checked{% endif %}
+                 style="width:auto;">
+          <label for="id_is_published" style="margin:0; text-transform:none; font-size:0.9rem; font-weight:500;">
+            Published (visible on public site)
+          </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">
+          {% if post %}Save Changes{% else %}Create Post{% endif %}
+        </button>
+
+        {% if post and post.is_published %}
+          <a href="{% url 'main_site:blog_detail' post.slug %}"
+             target="_blank"
+             style="display:block; text-align:center; margin-top:0.75rem; font-size:0.85rem; color:var(--amber);">
+            View live post →
+          </a>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+</form>
+
+{% endblock %}

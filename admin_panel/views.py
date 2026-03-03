@@ -50,7 +50,9 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
 
 from .decorators import admin_required, superadmin_required, admin_permission_required 
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -181,6 +183,19 @@ def admin_view_user(request, user_id):
     EXPAND: add an 'edit profile' button that links to admin_edit_user view.
     """
     target_user = get_object_or_404(User, id=user_id)
+
+    # ── Handle permission toggle POSTs ───────────────────────
+    if request.method == 'POST':
+        action = request.POST.get('action')
+
+        if action == 'toggle_can_create_group':
+            target_user.can_create_group = not target_user.can_create_group
+            target_user.save(update_fields=['can_create_group'])
+            status = 'granted' if target_user.can_create_group else 'revoked'
+            messages.success(request, f'Group creation permission {status} for {target_user.email}.')
+            return redirect('admin_panel:admin_view_user', user_id=user_id)
+
+        # EXPAND: add more permission toggles here as new user permissions are added.
 
     # Same three queries as cases/views.py user_pickedCases_dashboard
     # but using target_user instead of request.user
@@ -382,7 +397,7 @@ def case_detail(request, case_id):
                 answer.answer_date   = None
                 answer.answer_file   = None
 
-            elif req.type == 'file':
+            elif req.type in ('file', 'document'):
                 if 'answer_file' in request.FILES:
                     answer.answer_file   = request.FILES['answer_file']
                     answer.answer_text   = None
@@ -559,6 +574,95 @@ def add_extra_requirement(request, case_id):
 
     messages.success(request, f'"{requirement.name}" added to this case.')
     return redirect('admin_panel:case_detail', case_id=case_id)
+
+
+# ── 13b. EXPORT CASE REQUIREMENTS ─────────────────────────────
+# Downloads an Excel file listing every requirement for the case,
+# its description, and the user's answer.
+# Columns: #, Requirement, Type, Description, Answer
+# EXPAND: add more columns (e.g., admin notes, last edited) or
+#         apply different styling per requirement type.
+
+@admin_permission_required('can_view_all_cases')
+def export_case_requirements(request, case_id):
+    case = get_object_or_404(Case, id=case_id)
+
+    # Fetch all answers for this case once
+    answers_map = {
+        a.requirement_id: a
+        for a in CaseAnswer.objects.filter(case=case)
+    }
+
+    rows = (
+        CaseRequirement.objects
+        .filter(case=case, is_active=True)
+        .select_related('requirement')
+        .order_by('requirement__name')
+    )
+
+    # ── Build workbook ──────────────────────────────────────
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f'Case {case.id}'
+
+    # Header row styling
+    header_fill = PatternFill(fill_type='solid', fgColor='1E3A5F')  # navy
+    header_font = Font(color='FFFFFF', bold=True, size=11)
+    header_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    headers = ['#', 'Requirement', 'Type', 'Description', 'Answer']
+    col_widths = [5, 28, 12, 36, 36]
+
+    for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.fill   = header_fill
+        cell.font   = header_font
+        cell.alignment = header_align
+        ws.column_dimensions[cell.column_letter].width = width
+
+    ws.row_dimensions[1].height = 22
+
+    # Data rows
+    wrap = Alignment(vertical='top', wrap_text=True)
+
+    for row_num, cr in enumerate(rows, start=2):
+        req    = cr.requirement
+        answer = answers_map.get(req.id)
+
+        # Resolve answer value to a human-readable string
+        if answer is None:
+            answer_str = '—'
+        elif answer.answer_file:
+            answer_str = 'Document uploaded'
+        elif answer.answer_text:
+            answer_str = answer.answer_text
+        elif answer.answer_date:
+            answer_str = str(answer.answer_date)
+        elif answer.answer_number is not None:
+            answer_str = str(answer.answer_number)
+        else:
+            answer_str = '—'
+
+        ws.cell(row=row_num, column=1, value=row_num - 1).alignment = wrap
+        ws.cell(row=row_num, column=2, value=req.name).alignment = wrap
+        ws.cell(row=row_num, column=3, value=req.type).alignment = wrap
+        ws.cell(row=row_num, column=4, value=req.description or '').alignment = wrap
+        ws.cell(row=row_num, column=5, value=answer_str).alignment = wrap
+
+        # Zebra striping — light grey on even rows
+        if row_num % 2 == 0:
+            row_fill = PatternFill(fill_type='solid', fgColor='F5F5F5')
+            for col in range(1, 6):
+                ws.cell(row=row_num, column=col).fill = row_fill
+
+    # ── Stream response ─────────────────────────────────────
+    filename = f'case_{case.id}_requirements.xlsx'
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
 
 
 # ── 14. GROUP LIST ────────────────────────────────────────────
@@ -1366,21 +1470,54 @@ def task_create(request):
             errors['type'] = 'Task type is required.'
 
         if not errors:
+            # Fetch the user row that was selected in the "Assign To" dropdown
             assigned_user = get_object_or_404(User, id=assigned_id)
+
+            # ── Resolve the correct assignee FK ───────────────────────────
+            # The Task model has TWO separate FK fields for the two types:
+            #
+            #   assigned_to_user  → FK to User        (admin → user tasks)
+            #   assigned_to_admin → FK to AdminProfile (admin → admin tasks)
+            #
+            # Only ONE must be set; the other must be None.
+            # For admin→admin, we need the AdminProfile object, not the
+            # User object — that's what the DB column points to.
+            # ─────────────────────────────────────────────────────────────
+            assigned_to_user_obj  = None
+            assigned_to_admin_obj = None
+
+            if task_type == 'user':
+                # Straightforward — the User IS the assignee
+                assigned_to_user_obj = assigned_user
+
+            elif task_type == 'admin':
+                # We need the AdminProfile, not the User.
+                # hasattr() checks without hitting the DB again.
+                # If the chosen user is not an admin, add a form error
+                # instead of crashing with a ValueError.
+                if not hasattr(assigned_user, 'admin_profile'):
+                    errors['assigned_to'] = (
+                        f'{assigned_user.email} does not have an admin profile.'
+                    )
+                else:
+                    assigned_to_admin_obj = assigned_user.admin_profile
+
+        # Re-check: the admin_profile guard above may have added an error
+        if not errors:
             task = Task.objects.create(
                 task_type              = task_type,
                 title                  = title,
                 description            = description,
                 created_by             = request.user,
-                assigned_to_user       = assigned_user if task_type == 'user' else None,
-                assigned_to_admin      = assigned_user if task_type == 'admin' else None,
+                assigned_to_user       = assigned_to_user_obj,
+                assigned_to_admin      = assigned_to_admin_obj,
                 due_date               = due_date,
                 related_case_id        = case_id,
-                related_requirement_id = req_id,   # ← correct
+                related_requirement_id = req_id,
                 status                 = 'pending',
-                )
+            )
 
-            # Send notification to assignee
+            # Notify the assignee (helper handles both user and admin type)
             notify_task_assigned(task)
 
             messages.success(request, f'Task "{title}" created and assigned.')
@@ -1389,14 +1526,23 @@ def task_create(request):
     else:
         errors = {}
 
-    # Get assignable users — all admins for admin_to_admin,
-    # all regular users for admin_to_user
-    all_users  = User.objects.filter(is_active=True).order_by('email')
-    all_cases  = Case.objects.filter(is_active=True).order_by('-created_at')[:50]
+    # Split users into two groups so the template can show only
+    # the correct group depending on which task_type is selected.
+    #
+    #   regular_users (is_staff=False) → shown when task_type='user'
+    #   admin_users   (is_staff=True)  → shown when task_type='admin'
+    #
+    # The template uses JS to swap between them; only the active
+    # select is enabled so only one value is submitted per request.
+    # EXPAND: add a separate group for 'managers' if you add a role tier.
+    regular_users = User.objects.filter(is_active=True, is_staff=False).order_by('email')
+    admin_users   = User.objects.filter(is_active=True, is_staff=True).order_by('email')
+    all_cases     = Case.objects.filter(is_active=True).order_by('-created_at')[:50]
 
     return render(request, 'admin_panel/task_create.html', {
         'errors':         errors,
-        'all_users':      all_users,
+        'regular_users':  regular_users,
+        'admin_users':    admin_users,
         'all_cases':      all_cases,
         'type_choices':   Task.TYPE_CHOICES,
         'post':           request.POST,  # re-fill form on error
@@ -1683,3 +1829,168 @@ def invoice_delete(request, invoice_id):
         invoice.delete()
         messages.success(request, 'Invoice deleted.')
     return redirect('admin_panel:invoice_list')
+
+
+# ══════════════════════════════════════════════════════════════
+# CONTENT MANAGEMENT — superadmin only
+# ══════════════════════════════════════════════════════════════
+# Views:
+#   site_settings_edit   — edit the SiteSettings singleton
+#   blog_post_list       — list all blog posts (published + drafts)
+#   blog_post_create     — create a new blog post
+#   blog_post_edit       — edit an existing blog post
+#   blog_post_delete     — delete a post (POST only)
+#   contact_messages     — list contact form submissions + mark as read
+# ══════════════════════════════════════════════════════════════
+
+from main_site.models import SiteSettings, BlogPost, ContactMessage
+
+
+# ── SITE SETTINGS ─────────────────────────────────────────────
+@superadmin_required
+def site_settings_edit(request):
+    """
+    Edit the SiteSettings singleton.
+    GET  — prefill form with current values
+    POST — save and redirect back with success message
+    """
+    settings_obj = SiteSettings.get()
+
+    if request.method == 'POST':
+        # Text fields
+        settings_obj.company_name  = request.POST.get('company_name', '').strip()
+        settings_obj.tagline       = request.POST.get('tagline', '').strip()
+        settings_obj.contact_email = request.POST.get('contact_email', '').strip()
+        settings_obj.contact_phone = request.POST.get('contact_phone', '').strip()
+        settings_obj.address       = request.POST.get('address', '').strip()
+        settings_obj.linkedin_url  = request.POST.get('linkedin_url', '').strip()
+        settings_obj.instagram_url = request.POST.get('instagram_url', '').strip()
+        settings_obj.hero_title    = request.POST.get('hero_title', '').strip()
+        settings_obj.hero_subtitle = request.POST.get('hero_subtitle', '').strip()
+        settings_obj.hero_cta_text = request.POST.get('hero_cta_text', '').strip()
+        settings_obj.about_title   = request.POST.get('about_title', '').strip()
+        settings_obj.about_body    = request.POST.get('about_body', '').strip()
+
+        # Brand colors — hex strings (e.g. '#c8820a').
+        # Empty string = use hardcoded default from the CSS :root block.
+        # input type="color" always posts a valid 6-digit hex, so no validation needed.
+        settings_obj.color_primary      = request.POST.get('color_primary', '').strip()
+        settings_obj.color_accent       = request.POST.get('color_accent', '').strip()
+        settings_obj.color_accent_light = request.POST.get('color_accent_light', '').strip()
+        settings_obj.color_background   = request.POST.get('color_background', '').strip()
+
+        # Logo upload — only replace if a new file was uploaded
+        if request.FILES.get('logo'):
+            settings_obj.logo = request.FILES['logo']
+
+        settings_obj.save()
+        messages.success(request, 'Site settings saved.')
+        return redirect('admin_panel:site_settings_edit')
+
+    return render(request, 'admin_panel/site_settings.html', {
+        'settings_obj': settings_obj,
+    })
+
+
+# ── BLOG POST LIST ────────────────────────────────────────────
+@superadmin_required
+def blog_post_list(request):
+    """All blog posts — published and drafts."""
+    posts = BlogPost.objects.all()
+    return render(request, 'admin_panel/blog_list.html', {'posts': posts})
+
+
+# ── BLOG POST CREATE ──────────────────────────────────────────
+@superadmin_required
+def blog_post_create(request):
+    """
+    Create a new blog post.
+    Shared template with blog_post_edit — detects new vs existing via post=None.
+    """
+    if request.method == 'POST':
+        title       = request.POST.get('title', '').strip()
+        body        = request.POST.get('body', '').strip()
+        meta_desc   = request.POST.get('meta_description', '').strip()
+        is_pub      = request.POST.get('is_published') == 'on'
+
+        if not title or not body:
+            messages.error(request, 'Title and body are required.')
+            return render(request, 'admin_panel/blog_form.html', {'post': None})
+
+        post = BlogPost(
+            title=title,
+            body=body,
+            meta_description=meta_desc,
+            is_published=is_pub,
+        )
+        if request.FILES.get('thumbnail'):
+            post.thumbnail = request.FILES['thumbnail']
+        post.save()   # slug auto-generated in save()
+
+        messages.success(request, f'Post "{post.title}" created.')
+        return redirect('admin_panel:blog_post_list')
+
+    return render(request, 'admin_panel/blog_form.html', {'post': None})
+
+
+# ── BLOG POST EDIT ────────────────────────────────────────────
+@superadmin_required
+def blog_post_edit(request, post_id):
+    """Edit an existing blog post."""
+    post = get_object_or_404(BlogPost, id=post_id)
+
+    if request.method == 'POST':
+        post.title            = request.POST.get('title', '').strip()
+        post.body             = request.POST.get('body', '').strip()
+        post.meta_description = request.POST.get('meta_description', '').strip()
+        post.is_published     = request.POST.get('is_published') == 'on'
+
+        if not post.title or not post.body:
+            messages.error(request, 'Title and body are required.')
+            return render(request, 'admin_panel/blog_form.html', {'post': post})
+
+        if request.FILES.get('thumbnail'):
+            post.thumbnail = request.FILES['thumbnail']
+        post.save()
+
+        messages.success(request, f'Post "{post.title}" updated.')
+        return redirect('admin_panel:blog_post_list')
+
+    return render(request, 'admin_panel/blog_form.html', {'post': post})
+
+
+# ── BLOG POST DELETE ──────────────────────────────────────────
+@superadmin_required
+def blog_post_delete(request, post_id):
+    """Delete a blog post (POST only — delete button in blog_list.html)."""
+    if request.method == 'POST':
+        post = get_object_or_404(BlogPost, id=post_id)
+        title = post.title
+        post.delete()
+        messages.success(request, f'Post "{title}" deleted.')
+    return redirect('admin_panel:blog_post_list')
+
+
+# ── CONTACT MESSAGES ──────────────────────────────────────────
+@superadmin_required
+def contact_messages(request):
+    """
+    List all contact form submissions.
+    POST with action='mark_read' or 'mark_unread' to toggle is_read.
+    """
+    if request.method == 'POST':
+        msg_id = request.POST.get('message_id')
+        action = request.POST.get('action')
+        if msg_id and action in ('mark_read', 'mark_unread'):
+            msg = get_object_or_404(ContactMessage, id=msg_id)
+            msg.is_read = (action == 'mark_read')
+            msg.save(update_fields=['is_read'])
+        return redirect('admin_panel:contact_messages')
+
+    msgs_qs  = ContactMessage.objects.all()
+    unread   = msgs_qs.filter(is_read=False).count()
+
+    return render(request, 'admin_panel/contact_messages.html', {
+        'contact_msgs': msgs_qs,
+        'unread_count': unread,
+    })

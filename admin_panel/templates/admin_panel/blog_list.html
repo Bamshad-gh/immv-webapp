@@ -1,0 +1,82 @@
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Blog Posts{% endblock %}
+{% block topbar_title %}Blog Posts{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Blog Posts</h1>
+    <p class="page-subtitle">Articles published on the public website.</p>
+  </div>
+  <a href="{% url 'admin_panel:blog_post_create' %}" class="btn btn-primary">+ New Post</a>
+</div>
+
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert alert-{{ message.tags }}" style="margin-bottom:1rem;">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+
+{% if posts %}
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Published</th>
+          <th>Status</th>
+          <th>Date</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for post in posts %}
+          <tr>
+            <td style="font-weight:500;">{{ post.title }}</td>
+            <td>
+              {% if post.is_published %}
+                <span class="badge badge-active">Published</span>
+              {% else %}
+                <span class="badge badge-neutral">Draft</span>
+              {% endif %}
+            </td>
+            <td class="text-muted">{{ post.published_at|date:"M d, Y" }}</td>
+            <td class="text-muted">{{ post.updated_at|date:"M d, Y" }}</td>
+            <td style="white-space:nowrap;">
+              <a href="{% url 'admin_panel:blog_post_edit' post.id %}"
+                 class="btn btn-sm btn-outline">Edit</a>
+
+              {% if post.is_published %}
+                <a href="{% url 'main_site:blog_detail' post.slug %}"
+                   target="_blank"
+                   class="btn btn-sm btn-outline" style="margin-left:0.25rem;">View →</a>
+              {% endif %}
+
+              <form method="POST" action="{% url 'admin_panel:blog_post_delete' post.id %}"
+                    style="display:inline;"
+                    onsubmit="return confirm('Delete « {{ post.title }} »?')">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-danger" style="margin-left:0.25rem;">
+                  Delete
+                </button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+{% else %}
+  <div class="card">
+    <div class="empty-state">
+      <p class="empty-state-title">No blog posts yet</p>
+      <p class="text-muted">Create your first post to start publishing content on the public site.</p>
+      <a href="{% url 'admin_panel:blog_post_create' %}" class="btn btn-primary" style="margin-top:1rem;">
+        Create First Post
+      </a>
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

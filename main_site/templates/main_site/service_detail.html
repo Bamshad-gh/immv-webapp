@@ -1,0 +1,91 @@
+{% extends "main_site/base_public.html" %}
+
+{% block meta_title %}{{ service.name }}{% endblock %}
+{% block meta_description %}{{ service.description|default:service.name|truncatechars:155 }}{% endblock %}
+{% block og_title %}{{ service.name }}{% endblock %}
+
+{% block content %}
+
+{# ── HEADER ── #}
+<section class="section section-navy" style="padding:5rem 2rem 4rem;">
+  <div class="container">
+    <a href="{% url 'main_site:services' %}"
+       style="color:rgba(255,255,255,0.5); font-size:0.875rem; text-decoration:none; display:inline-block; margin-bottom:1.25rem;">
+      ← All Services
+    </a>
+    <h1 class="section-title" style="color:var(--white);">{{ service.name }}</h1>
+    {% if service.description %}
+      <p style="color:rgba(255,255,255,0.65); font-size:1.05rem; max-width:600px; margin-top:0.75rem; line-height:1.8;">
+        {{ service.description }}
+      </p>
+    {% endif %}
+  </div>
+</section>
+
+{# ── CATEGORIES ── #}
+<section class="section section-cream">
+  <div class="container">
+
+    {% if categories %}
+      <h2 class="section-title" style="margin-bottom:0.5rem;">Available Programs</h2>
+      <p class="section-subtitle">
+        Select a program below to learn more and start your application through our client portal.
+      </p>
+
+      <div class="cards-grid">
+        {% for cat in categories %}
+          <div class="pub-card">
+            <h3 class="pub-card-title">{{ cat.name }}</h3>
+            {% if cat.description %}
+              <p class="pub-card-text" style="margin-top:0.5rem;">{{ cat.description }}</p>
+            {% endif %}
+
+            {# Show subcategories if any #}
+            {% with subs=cat.subcategories.all %}
+              {% if subs %}
+                <ul style="margin-top:1rem; padding-left:1.25rem; font-size:0.9rem; color:var(--slate);">
+                  {% for sub in subs %}
+                    {% if sub.is_active %}
+                      <li style="margin-bottom:0.3rem;">{{ sub.name }}</li>
+                    {% endif %}
+                  {% endfor %}
+                </ul>
+              {% endif %}
+            {% endwith %}
+
+            <div style="margin-top:1.25rem;">
+              <a href="{% url 'login' %}?next=/cases/"
+                 class="pub-btn pub-btn-outline-dark" style="font-size:0.85rem; padding:0.5rem 1.1rem;">
+                Start Application →
+              </a>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+    {% else %}
+      <div style="text-align:center; padding:3rem 1rem; color:var(--slate);">
+        <p style="font-family:var(--font-serif); font-size:1.2rem; color:var(--navy); margin-bottom:0.5rem;">
+          Programs coming soon
+        </p>
+        <p><a href="{% url 'main_site:contact' %}" style="color:var(--amber);">Contact us</a> to discuss your situation directly.</p>
+      </div>
+    {% endif %}
+
+  </div>
+</section>
+
+{# ── CTA ── #}
+<section class="section section-white" style="text-align:center; padding:4rem 2rem;">
+  <div class="container" style="max-width:640px;">
+    <h2 class="section-title" style="margin-bottom:1rem;">Have questions about {{ service.name }}?</h2>
+    <p style="color:var(--slate); margin-bottom:2rem;">
+      Our advisors are ready to walk you through every detail of the process.
+    </p>
+    <a href="{% url 'main_site:contact' %}" class="pub-btn pub-btn-primary">
+      {{ site_settings.hero_cta_text }} →
+    </a>
+  </div>
+</section>
+
+{% endblock %}

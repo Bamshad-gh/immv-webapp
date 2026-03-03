@@ -11,9 +11,9 @@
     /* ── CSS Variables — change here to retheme everything ── */
     :root {
       --navy:   #0f1923;
-      --cream:  #f7f5f0;
+      --cream:  #d89d09;
       --amber:  #c8820a;
-      --amber-light: #f5e6c8;
+      --amber-light: #ffaa00;
       --slate:  #4a5568;
       --border: #e2ddd6;
       --white:  #ffffff;
@@ -364,6 +364,122 @@
       color: var(--navy);
     }
 
+    /* ── Admin-in-user-portal warning banner ──────────────────────────
+       WHAT:  A full-width amber bar shown ONLY when a staff/admin user
+              (is_staff=True) is browsing the user-facing portal.
+       WHY:   Django shares ONE session cookie across the whole site.
+              When an admin logs into the admin panel, they are technically
+              also "logged in" on the user portal.  This banner makes that
+              fact visible so the admin always knows where they are.
+       HOW:   We check request.user.is_staff in the template (see HTML below).
+              The CSS is here so the style lives with all other site styles.
+       EXPAND: add a "Log out & switch" button if you want to make it easier
+               to switch between roles without going to the admin panel first.
+    ────────────────────────────────────────────────────────────────── */
+    .admin-banner {
+      background: var(--amber-light);         /* soft amber — same shade as info messages */
+      border-bottom: 2px solid var(--amber);  /* strong bottom border for visual weight */
+      padding: 0.55rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      font-size: 0.85rem;
+    }
+
+    .admin-banner-text { color: #7a4f06; font-weight: 500; }
+
+    .admin-banner-link {
+      color: #7a4f06;
+      font-weight: 700;
+      text-decoration: underline;
+      white-space: nowrap;          /* prevents the link from wrapping mid-word */
+      flex-shrink: 0;               /* never squish the link even on small screens */
+    }
+    .admin-banner-link:hover { color: var(--navy); }
+
+    /* ── Notification bell ────────────────────────────────────────────
+       How it works:
+       - .notif-bell       wrapper with position:relative so the dropdown
+                           can be positioned absolutely below it
+       - .notif-bell-btn   the clickable bell link
+       - .notif-badge      small red bubble in the top-right corner
+                           showing the unread count; hidden when count = 0
+       - .notif-dropdown   the popup card; shown/hidden by JS
+       - .notif-item       one row per notification inside the dropdown
+       ─────────────────────────────────────────────────────────────── */
+    .notif-bell { position: relative; }
+
+    .notif-bell-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px;
+      color: rgba(255,255,255,0.7);
+      text-decoration: none;
+      border-radius: 4px;
+      transition: color 0.15s, background 0.15s;
+      position: relative; /* allows badge to sit on top */
+    }
+    .notif-bell-btn:hover { color: var(--white); background: rgba(24, 3, 3, 0.08); }
+
+    .notif-badge {
+      position: absolute; top: 4px; right: 4px;
+      background: #e53e3e;
+      color: #fff;
+      font-size: 0.6rem; font-weight: 700;
+      min-width: 16px; height: 16px;
+      border-radius: 8px;
+      padding: 0 4px;
+      display: flex; align-items: center; justify-content: center;
+      line-height: 1;
+      pointer-events: none; /* don't block clicks on the bell */
+    }
+
+    .notif-dropdown {
+      position: absolute; top: calc(100% + 8px); right: 0;
+      width: 300px;
+      background: var(--white);
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+      z-index: 200;
+    }
+
+    .notif-dropdown-header {
+      padding: 0.75rem 1rem;
+      font-size: 0.75rem; font-weight: 600;
+      letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--slate);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .notif-item {
+      display: block; padding: 0.75rem 1rem;
+      font-size: 0.85rem; color: var(--navy) !important; /* force readable dark text */
+      border-bottom: 1px solid var(--border);
+      text-decoration: none;
+      line-height: 1.4;
+      transition: background 0.1s;
+    }
+    .notif-item:hover { background: var(--cream);color: var(--navy) !important;0}
+    .notif-item.unread { background: #fffbeb; font-weight: 500; }
+
+    .notif-item-date {
+      font-size: 0.75rem; color: var(--slate);
+      margin-top: 0.2rem;
+    }
+
+    .notif-view-all {
+      display: block; text-align: center;
+      padding: 0.6rem; font-size: 0.8rem;
+      color: var(--amber); text-decoration: none;
+      font-weight: 500;
+    }
+    .notif-view-all:hover { background: var(--cream); }
+
+    .notif-empty {
+      padding: 1.5rem 1rem; text-align: center;
+      font-size: 0.85rem; color: var(--slate);
+    }
+
     /* ── Divider ── */
     .divider {
       height: 1px;
@@ -386,6 +502,23 @@
     .mb-1         { margin-bottom: 0.5rem; }
     .mb-2         { margin-bottom: 1rem; }
   </style>
+<!-- ── Dynamic color overrides from Admin Panel → Content → Site Settings ──────
+   WHY: The :root block above has hardcoded defaults. This block injects a second
+        :root override AFTER it. In CSS, when two rules have equal specificity,
+        the LATER one wins — so these values silently replace the defaults.
+        If a field is empty, that variable keeps its hardcoded default unchanged.
+   EXPAND: add --danger, --success overrides here when those fields are added.
+────────────────────────────────────────────────────────────────────────────── -->
+{% if site_settings.color_primary or site_settings.color_accent or site_settings.color_accent_light or site_settings.color_background %}
+<style>
+  :root {
+    {% if site_settings.color_primary %}--navy: {{ site_settings.color_primary }};{% endif %}
+    {% if site_settings.color_accent %}--amber: {{ site_settings.color_accent }};{% endif %}
+    {% if site_settings.color_accent_light %}--amber-light: {{ site_settings.color_accent_light }};{% endif %}
+    {% if site_settings.color_background %}--cream: {{ site_settings.color_background }};{% endif %}
+  }
+</style>
+{% endif %}
 {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -398,11 +531,50 @@
       {% if request.user.is_authenticated %}
         <li><a href="{% url 'cases:dashboard' %}">My Cases</a></li>
         <li><a href="{% url 'groups:group_dashboard' %}">Groups</a></li>
-        {# EXPAND: add more nav links here #}
+        <li><a href="{% url 'payments:invoice_list' %}">Invoices</a></li>
+        <!-- EXPAND: add more nav links here -->
       {% endif %}
     </ul>
     <div class="topnav-user">
       {% if request.user.is_authenticated %}
+
+        <!-- ── Notification bell ───────────────────────────────────────
+             The bell sits here in the navbar.
+             JS (at bottom of this file) handles:
+               - polling the count endpoint every 30 s  → updates the badge
+               - fetching the preview endpoint on click → fills the dropdown
+        ──────────────────────────────────────────────────────────────── -->
+        <div class="notif-bell" id="notifBell">
+
+          <!-- Clickable bell icon — aria-label for screen readers -->
+          <a href="#" class="notif-bell-btn" id="notifBellBtn"
+             aria-label="Notifications" aria-expanded="false">
+            <!-- SVG bell — no icon library needed -->
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+            <!-- Red count badge — JS hides this when count = 0 -->
+            <span class="notif-badge" id="notifBadge" style="display:none">0</span>
+          </a>
+
+          <!-- Dropdown panel — JS shows/hides this -->
+          <div class="notif-dropdown" id="notifDropdown" style="display:none"
+               role="dialog" aria-label="Recent notifications">
+            <div class="notif-dropdown-header">Notifications</div>
+            <!-- JS fills this div with notification rows -->
+            <div id="notifList">
+              <div class="notif-empty">Loading…</div>
+            </div>
+            <a href="{% url 'notifications_list' %}" class="notif-view-all">
+              View all notifications →
+            </a>
+          </div>
+
+        </div><!-- /notif-bell -->
+
         <span>{{ request.user.email }}</span>
         <a href="{% url 'logout' %}">Sign out</a>
       {% else %}
@@ -410,6 +582,34 @@
       {% endif %}
     </div>
   </nav>
+
+  <!-- ── Admin-in-user-portal warning banner ─────────────────────────
+       WHAT:  Amber bar shown ONLY when a staff/admin user visits any
+              user-facing page (cases, groups, notifications, etc.).
+       WHY:   Django uses ONE session cookie for the whole site.
+              When you log in as admin, you are technically "logged in"
+              on the user portal too.  Without this banner you would not
+              know which interface you're looking at.
+       HOW:   request.user.is_staff is True for any admin/superadmin.
+              It is always available in templates because
+              'django.template.context_processors.request' is in TEMPLATES
+              in settings.py — so request.user is injected automatically.
+       NOTE:  This banner does NOT appear in the admin panel because that
+              panel uses base_admin.html, not this file.
+  ─────────────────────────────────────────────────────────────────── -->
+  {% if request.user.is_authenticated and request.user.is_staff %}
+  <div class="admin-banner" role="alert">
+    <span class="admin-banner-text">
+      ⚠ Admin mode — you are browsing the <strong>client portal</strong>
+      as <strong>{{ request.user.email }}</strong>.
+      Anything you do here affects your own user account, not other users.
+    </span>
+    <a href="{% url 'admin_panel:admin_dashboard' %}" class="admin-banner-link">
+      Go to Admin Panel →
+    </a>
+  </div>
+  {% endif %}
+
   <!-- Flash messages -->
 {% if messages %}
 <div style="max-width:1100px; margin: 1rem auto; padding: 0 2rem;">
@@ -422,7 +622,157 @@
 {% endif %}
   <!-- Page content -->
 {% block content %}{% endblock %}
+
 {% block extra_js %}{% endblock %}
+
+{% if request.user.is_authenticated %}
+<script>
+/* ══════════════════════════════════════════════════════════════════
+   NOTIFICATION BELL — base.html
+   ══════════════════════════════════════════════════════════════════
+   This script is wrapped in an IIFE (Immediately Invoked Function
+   Expression) so none of its variables leak into the global scope.
+   Child templates can safely define their own variables with the
+   same names without conflict.
+
+   Flow:
+     1. On page load  → fetchCount()  updates the badge
+     2. Every 30 s    → fetchCount()  keeps badge fresh without page reload
+     3. Bell click    → openDropdown() + fetchPreview() loads recent items
+     4. Outside click → closeDropdown() dismisses the panel
+   ══════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  /* ── DOM references ── */
+  const bell     = document.getElementById('notifBell');
+  const btn      = document.getElementById('notifBellBtn');
+  const dropdown = document.getElementById('notifDropdown');
+  const badge    = document.getElementById('notifBadge');
+  const list     = document.getElementById('notifList');
+
+  /* If the bell doesn't exist on this page (e.g. login page), do nothing. */
+  if (!bell) return;
+
+  /* Django URL tags — resolved at render time, safe to embed in JS */
+  const URL_COUNT   = '{% url "notifications_count" %}';
+  const URL_PREVIEW = '{% url "notifications_preview" %}';
+  const URL_ALL     = '{% url "notifications_list" %}';
+
+  /* ── 1. Update the red badge with the current unread count ───────
+     We only show the badge when count > 0.
+     "99+" is shown when there are more than 99 unread notifications
+     so the badge doesn't grow too wide.
+  ─────────────────────────────────────────────────────────────────── */
+  function fetchCount() {
+    fetch(URL_COUNT)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.count > 0) {
+          badge.textContent  = data.count > 99 ? '99+' : data.count;
+          badge.style.display = 'flex';
+        } else {
+          badge.style.display = 'none';
+        }
+      })
+      .catch(function() {});  /* silently ignore network errors */
+  }
+
+  /* ── 2. Load recent notifications into the dropdown ─────────────
+     Each notification becomes a clickable row that goes to the full
+     notifications page.  We always escape user-generated text before
+     injecting it into innerHTML (prevents XSS attacks).
+  ─────────────────────────────────────────────────────────────────── */
+  function fetchPreview() {
+    list.innerHTML = '<div class="notif-empty">Loading\u2026</div>';
+
+    fetch(URL_PREVIEW)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+
+        /* Sync badge with data from this response too */
+        if (data.unread_count > 0) {
+          badge.textContent  = data.unread_count > 99 ? '99+' : data.unread_count;
+          badge.style.display = 'flex';
+        } else {
+          badge.style.display = 'none';
+        }
+
+        if (data.notifications.length === 0) {
+          list.innerHTML = '<div class="notif-empty">No notifications yet</div>';
+          return;
+        }
+
+        /* Build one <a> row per notification */
+        list.innerHTML = data.notifications.map(function(n) {
+          var unreadClass = n.is_read ? '' : 'unread';
+          return (
+            '<a href="' + URL_ALL + '" class="notif-item ' + unreadClass + '">' +
+              esc(n.message) +
+              '<div class="notif-item-date">' + esc(n.created_at) + '</div>' +
+            '</a>'
+          );
+        }).join('');
+
+      })
+      .catch(function() {
+        list.innerHTML = '<div class="notif-empty">Could not load notifications</div>';
+      });
+  }
+
+  /* ── XSS protection ─────────────────────────────────────────────
+     Never inject untrusted text directly into innerHTML.
+     This function converts special HTML characters to their safe
+     entity equivalents so they render as text, not as tags.
+  ─────────────────────────────────────────────────────────────────── */
+  function esc(str) {
+    return String(str)
+      .replace(/&/g,  '&amp;')
+      .replace(/</g,  '&lt;')
+      .replace(/>/g,  '&gt;')
+      .replace(/"/g,  '&quot;')
+      .replace(/'/g,  '&#39;');
+  }
+
+  /* ── 3. Bell click — toggle dropdown ────────────────────────────
+     stopPropagation() prevents this click from also firing the
+     document-level click handler that closes the dropdown.
+  ─────────────────────────────────────────────────────────────────── */
+  btn.addEventListener('click', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    var isOpen = dropdown.style.display !== 'none';
+    if (isOpen) { closeDropdown(); } else { openDropdown(); }
+  });
+
+  function openDropdown() {
+    dropdown.style.display = 'block';
+    btn.setAttribute('aria-expanded', 'true');
+    fetchPreview();  /* always load fresh data when opening */
+  }
+
+  function closeDropdown() {
+    dropdown.style.display = 'none';
+    btn.setAttribute('aria-expanded', 'false');
+  }
+
+  /* ── 4. Close when clicking anywhere outside the bell ────────────
+     bell.contains(e.target) is true when the click was inside the
+     bell wrapper (button OR dropdown), so we only close on outside clicks.
+  ─────────────────────────────────────────────────────────────────── */
+  document.addEventListener('click', function(e) {
+    if (!bell.contains(e.target)) closeDropdown();
+  });
+
+  /* ── Init ────────────────────────────────────────────────────────
+     Fetch count immediately so the badge shows without waiting 30 s.
+     Then repeat every 30 seconds.
+  ─────────────────────────────────────────────────────────────────── */
+  fetchCount();
+  setInterval(fetchCount, 30000);
+
+}());
+</script>
+{% endif %}
 </body>
 </html>
-<!--

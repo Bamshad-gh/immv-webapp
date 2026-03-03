@@ -1,0 +1,61 @@
+{% extends "main_site/base_public.html" %}
+
+{% block meta_title %}{{ post.title }}{% endblock %}
+{% block meta_description %}{{ post.meta_description|default:post.body|truncatechars:155 }}{% endblock %}
+{% block og_title %}{{ post.title }}{% endblock %}
+{% block og_description %}{{ post.meta_description|default:post.body|truncatechars:155 }}{% endblock %}
+{% block og_image %}
+  {% if post.thumbnail %}
+    <meta property="og:image" content="{{ request.build_absolute_uri }}{{ post.thumbnail.url }}">
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+
+{# ── HEADER ── #}
+<section class="section section-navy" style="padding:5rem 2rem 4rem;">
+  <div class="container" style="max-width:820px;">
+    <a href="{% url 'main_site:blog' %}"
+       style="color:rgba(255,255,255,0.5); font-size:0.875rem; text-decoration:none; display:inline-block; margin-bottom:1.25rem;">
+      ← All Articles
+    </a>
+    <p class="pub-tag" style="margin-bottom:1rem;">{{ post.published_at|date:"M d, Y" }}</p>
+    <h1 class="section-title" style="color:var(--white); font-size:clamp(1.75rem, 4vw, 2.75rem);">
+      {{ post.title }}
+    </h1>
+  </div>
+</section>
+
+{# ── ARTICLE BODY ── #}
+<section class="section section-white">
+  <div class="container" style="max-width:820px;">
+
+    {% if post.thumbnail %}
+      <div style="margin-bottom:2.5rem; overflow:hidden; border-radius:2px;">
+        <img src="{{ post.thumbnail.url }}" alt="{{ post.title }}"
+             style="width:100%; max-height:420px; object-fit:cover;">
+      </div>
+    {% endif %}
+
+    {# Article body — white-space:pre-line preserves paragraph breaks in plain text #}
+    {# EXPAND: if you switch body to rich text, replace this with {{ post.body|safe }} #}
+    <div style="font-size:1.05rem; line-height:1.9; color:var(--slate); white-space:pre-line;">
+      {{ post.body }}
+    </div>
+
+  </div>
+</section>
+
+{# ── BOTTOM NAV ── #}
+<section class="section section-cream" style="padding:2.5rem 2rem;">
+  <div class="container" style="max-width:820px; display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;">
+    <a href="{% url 'main_site:blog' %}" class="pub-btn pub-btn-outline-dark">
+      ← Back to Blog
+    </a>
+    <a href="{% url 'main_site:contact' %}" class="pub-btn pub-btn-primary">
+      {{ site_settings.hero_cta_text }} →
+    </a>
+  </div>
+</section>
+
+{% endblock %}

@@ -1,64 +1,104 @@
 
 <!-- ============================================================
-FILE: cases/templates/cases/user_notifications.html
-User notification inbox — unread tasks highlighted.
-EXPAND: add notification_type icons for different alert types.
+FILE:  users/templates/users/notifications_list.html
+PAGE:  /users/notifications/
+WHO:   Any logged-in user (regular users AND admins)
+
+HOW IT WORKS:
+  The view (users/views.py → notifications_list) fetches all
+  notifications for the current user, marks every unread one as
+  read, then renders this page.
+
+  Because the view marks everything as read on arrival, we don't
+  need "Mark read" buttons.  After visiting this page the bell
+  badge will go to 0 on the next 30-second poll.
+
+EXPAND: Add notification_type icons, pagination, or filters.
 ============================================================ -->
 {% extends "base.html" %}
 {% block title %}Notifications{% endblock %}
 
 {% block content %}
-<div style="max-width:640px; margin:2rem auto; padding:0 1rem;">
-  <div style="display:flex; justify-content:space-between; align-items:center;
-              margin-bottom:1.5rem;">
-    <h1>Notifications</h1>
-    {% if unread_count %}
-      <form method="POST" action="{% url 'cases:mark_all_read' %}">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-outline btn-sm">Mark all read</button>
-      </form>
-    {% endif %}
+<div class="page">
+
+  <!-- ── Page header ──────────────────────────────────────────── -->
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Notifications</h1>
+      <p class="page-subtitle">
+        All your notifications — newest first.
+        Unread items are highlighted in amber.
+      </p>
+    </div>
   </div>
 
+  <!-- ── Notification list ────────────────────────────────────── -->
   {% if notifications %}
+
     {% for notif in notifications %}
-      <div style="padding:1rem;
-                  border:1px solid var(--border);
-                  margin-bottom:0.75rem;
-                  background:{% if not notif.is_read %}#fffbeb{% else %}var(--white){% endif %};">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-          <div>
-            <div style="font-weight:{% if not notif.is_read %}600{% else %}400{% endif %};">
-              {{ notif.message }}
-            </div>
-            {% if notif.task %}
-              <div class="text-muted text-small mt-1">
-                Due: {{ notif.task.due_date|date:"M d, Y"|default:"No due date" }}
-                {% if notif.task.related_case %} · Case #{{ notif.task.related_case.id }}{% endif %}
-              </div>
-              {% if notif.task.description %}
-                <div class="text-muted text-small mt-1">{{ notif.task.description }}</div>
+    <!-- Each row is a card.
+         Unread rows get a left amber border so they stand out.
+         The view already marked all as read, so on next load
+         none will be highlighted — this is intentional. -->
+    <div class="card" style="
+      margin-bottom: 0.75rem;
+      {% if not notif.is_read %}border-left: 3px solid var(--amber);{% endif %}
+    ">
+      <div class="flex-between">
+
+        <!-- Left: message + optional task detail -->
+        <div style="flex: 1;">
+
+          <!-- Main notification text -->
+          <div style="
+            font-weight: {% if not notif.is_read %}600{% else %}400{% endif %};
+            font-size: 0.9rem;
+          ">
+            {{ notif.message }}
+          </div>
+
+          <!-- If this notification is linked to a task, show extra info -->
+          {% if notif.task %}
+            <div class="text-muted text-small mt-1">
+              Task: <strong>{{ notif.task.title }}</strong>
+              {% if notif.task.due_date %}
+                · Due {{ notif.task.due_date|date:"M d, Y" }}
               {% endif %}
+              {% if notif.task.related_case %}
+                · Case #{{ notif.task.related_case.id }}
+              {% endif %}
+            </div>
+            {% if notif.task.description %}
+              <div class="text-muted text-small mt-1">
+                {{ notif.task.description|truncatechars:120 }}
+              </div>
             {% endif %}
+          {% endif %}
+
+        </div><!-- /left -->
+
+        <!-- Right: date + unread indicator -->
+        <div style="text-align:right; flex-shrink:0; margin-left:1.5rem;">
+          <div class="text-muted text-small">
+            {{ notif.created_at|date:"M d, Y" }}
           </div>
-          <div style="text-align:right; flex-shrink:0; margin-left:1rem;">
-            <div class="text-muted text-small">{{ notif.created_at|date:"M d, Y" }}</div>
-            {% if not notif.is_read %}
-              <form method="POST"
-                    action="{% url 'cases:mark_notification_read' notif.id %}"
-                    style="margin-top:0.4rem;">
-                {% csrf_token %}
-                <button type="submit" class="btn btn-sm btn-outline">Mark read</button>
-              </form>
-            {% endif %}
-          </div>
-        </div>
-      </div>
+          {% if not notif.is_read %}
+            <!-- Visual "new" pill — no button needed, view marks it read -->
+            <span class="badge badge-pending" style="margin-top:0.4rem;">New</span>
+          {% endif %}
+        </div><!-- /right -->
+
+      </div><!-- /flex-between -->
+    </div><!-- /card -->
     {% endfor %}
+
   {% else %}
-    <div style="text-align:center; color:var(--slate); padding:3rem 0;">
-      <p style="font-size:1.1rem;">No notifications</p>
+    <!-- Empty state — shown when the user has no notifications at all -->
+    <div class="empty-state">
+      <p class="empty-state-title">No notifications</p>
+      <p>You'll see task assignments and invoice updates here.</p>
     </div>
   {% endif %}
-</div>
+
+</div><!-- /page -->
 {% endblock %}

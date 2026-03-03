@@ -55,6 +55,11 @@ class User(AbstractUser):
     last_name  = models.CharField(max_length=30, blank=True, null=True)
     phone      = models.CharField(max_length=20, blank=True, null=True)
 
+    # User-level feature permissions — granted by admin on a per-user basis.
+    # False by default: users cannot do these things until an admin explicitly allows it.
+    # EXPAND: add more booleans here as new user-facing features need access control.
+    can_create_group = models.BooleanField(default=False)
+
     objects = UserManager()  # attach our custom manager
 
     USERNAME_FIELD  = 'email'  # email is the login field

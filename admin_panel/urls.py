@@ -47,6 +47,12 @@ urlpatterns = [
         views.add_extra_requirement,
         name='add_extra_requirement'
     ),
+    # export = download requirements + answers as Excel
+    path(
+        'cases/<int:case_id>/export/',
+        views.export_case_requirements,
+        name='export_case_requirements'
+    ),
 
     # ── Groups ────────────────────────────────────────────────
     path('groups/',                views.group_list,   name='group_list'),
@@ -156,12 +162,15 @@ path('ajax/builder/requirement/<int:requirement_id>/delete/',
     
     
     
-    # ______ delet tasks or invoices
-    path('tasks/<int:task_id>/delete/', views.task_delete, name='task_delete'),
-    path('invoices/<int:invoice_id>/delete/', views.invoice_delete, name='invoice_delete'),
-    
-    
+    # -- Delete tasks / invoices
+    path('tasks/<int:task_id>/delete/',        views.task_delete,    name='task_delete'),
+    path('invoices/<int:invoice_id>/delete/',  views.invoice_delete, name='invoice_delete'),
 
-    
-
-                        ]
+    # -- Content management (superadmin only)
+    path('content/settings/',                    views.site_settings_edit, name='site_settings_edit'),
+    path('content/blog/',                        views.blog_post_list,     name='blog_post_list'),
+    path('content/blog/create/',                 views.blog_post_create,   name='blog_post_create'),
+    path('content/blog/<int:post_id>/edit/',     views.blog_post_edit,     name='blog_post_edit'),
+    path('content/blog/<int:post_id>/delete/',   views.blog_post_delete,   name='blog_post_delete'),
+    path('content/messages/',                    views.contact_messages,   name='contact_messages'),
+]

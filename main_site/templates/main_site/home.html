@@ -1,0 +1,110 @@
+{% extends "main_site/base_public.html" %}
+
+{% block meta_title %}Home{% endblock %}
+{% block meta_description %}{{ site_settings.hero_subtitle|truncatechars:155 }}{% endblock %}
+
+{% block content %}
+
+{# ══ HERO ════════════════════════════════════════════════════ #}
+<section class="section section-navy" style="padding: 7rem 2rem;">
+  <div class="container text-center" style="max-width:780px;">
+    <div class="pub-tag" style="margin-bottom:1.5rem;">Immigration Services</div>
+    <h1 class="section-title" style="font-size: clamp(2.25rem, 5vw, 3.5rem); color:var(--white); margin-bottom:1.25rem;">
+      {{ site_settings.hero_title }}
+    </h1>
+    <p style="font-size:1.1rem; color:rgba(255,255,255,0.7); margin-bottom:2.5rem; line-height:1.8; max-width:620px; margin-left:auto; margin-right:auto;">
+      {{ site_settings.hero_subtitle }}
+    </p>
+    <div style="display:flex; justify-content:center; gap:1rem; flex-wrap:wrap;">
+      <a href="{% url 'main_site:contact' %}" class="pub-btn pub-btn-primary">
+        {{ site_settings.hero_cta_text }} →
+      </a>
+      <a href="{% url 'main_site:services' %}" class="pub-btn pub-btn-outline">
+        View Services
+      </a>
+    </div>
+  </div>
+</section>
+
+{# ══ SERVICES GRID ════════════════════════════════════════════ #}
+{% if services %}
+<section class="section section-cream">
+  <div class="container">
+    <p class="pub-tag mb-2">What We Offer</p>
+    <h2 class="section-title">Immigration Services</h2>
+    <p class="section-subtitle">
+      From temporary visas to permanent residency — we guide you through every step.
+    </p>
+
+    <div class="cards-grid">
+      {% for service in services %}
+        <a href="{% url 'main_site:service_detail' service.slug %}"
+           class="pub-card" style="text-decoration:none; color:inherit; display:block;">
+          <h3 class="pub-card-title">{{ service.name }}</h3>
+          {% if service.description %}
+            <p class="pub-card-text">{{ service.description|truncatechars:120 }}</p>
+          {% endif %}
+          <p style="margin-top:1rem; font-size:0.85rem; color:var(--amber); font-weight:600;">
+            Learn more →
+          </p>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{# ══ CTA BANNER ═══════════════════════════════════════════════ #}
+<section class="section section-white">
+  <div class="container" style="max-width:760px; text-align:center;">
+    <h2 class="section-title" style="margin-bottom:1rem;">
+      Ready to start your immigration journey?
+    </h2>
+    <p style="color:var(--slate); font-size:1.05rem; margin-bottom:2rem;">
+      Book a consultation today. Our team will review your case and map out
+      the best path forward.
+    </p>
+    <a href="{% url 'main_site:contact' %}" class="pub-btn pub-btn-primary">
+      {{ site_settings.hero_cta_text }} →
+    </a>
+  </div>
+</section>
+
+{# ══ BLOG PREVIEW ═════════════════════════════════════════════ #}
+{% if blog_posts %}
+<section class="section section-cream">
+  <div class="container">
+    <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:2rem; flex-wrap:wrap; gap:1rem;">
+      <div>
+        <p class="pub-tag mb-2">Latest Articles</p>
+        <h2 class="section-title" style="margin-bottom:0;">From Our Blog</h2>
+      </div>
+      <a href="{% url 'main_site:blog' %}" class="pub-btn pub-btn-outline-dark">
+        All Articles →
+      </a>
+    </div>
+
+    <div class="cards-grid">
+      {% for post in blog_posts %}
+        <a href="{% url 'main_site:blog_detail' post.slug %}"
+           class="pub-card" style="text-decoration:none; color:inherit; display:block;">
+          {% if post.thumbnail %}
+            <img src="{{ post.thumbnail.url }}" alt="{{ post.title }}"
+                 style="width:100%; height:180px; object-fit:cover; margin-bottom:1.25rem; margin-left:-2rem; margin-top:-2rem; width:calc(100% + 4rem);">
+          {% endif %}
+          <p class="pub-tag mb-2">{{ post.published_at|date:"M d, Y" }}</p>
+          <h3 class="pub-card-title">{{ post.title }}</h3>
+          <p class="pub-card-text" style="margin-top:0.5rem;">
+            {{ post.body|truncatechars:120 }}
+          </p>
+          <p style="margin-top:1rem; font-size:0.85rem; color:var(--amber); font-weight:600;">
+            Read more →
+          </p>
+        </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}

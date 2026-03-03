@@ -1,0 +1,64 @@
+{% extends "main_site/base_public.html" %}
+
+{% block meta_title %}Services{% endblock %}
+{% block meta_description %}Explore our full range of immigration services — work permits, study visas, permanent residency, and more.{% endblock %}
+
+{% block content %}
+
+{# ── PAGE HEADER ── #}
+<section class="section section-navy" style="padding:5rem 2rem 4rem;">
+  <div class="container">
+    <p class="pub-tag" style="margin-bottom:1rem;">What We Offer</p>
+    <h1 class="section-title" style="color:var(--white);">Immigration Services</h1>
+    <p style="color:rgba(255,255,255,0.65); font-size:1.05rem; max-width:560px; margin-top:0.75rem;">
+      We offer a comprehensive range of immigration services tailored to individuals, families, and businesses.
+    </p>
+  </div>
+</section>
+
+{# ── SERVICES GRID ── #}
+<section class="section section-cream">
+  <div class="container">
+    {% if services %}
+      <div class="cards-grid">
+        {% for service in services %}
+          <a href="{% url 'main_site:service_detail' service.slug %}"
+             class="pub-card" style="text-decoration:none; color:inherit; display:block;">
+            <h2 class="pub-card-title">{{ service.name }}</h2>
+            {% if service.description %}
+              <p class="pub-card-text" style="margin-top:0.5rem;">
+                {{ service.description|truncatechars:160 }}
+              </p>
+            {% endif %}
+            <p style="margin-top:1.25rem; font-size:0.85rem; color:var(--amber); font-weight:600;">
+              View details →
+            </p>
+          </a>
+        {% endfor %}
+      </div>
+
+    {% else %}
+      <div style="text-align:center; padding:4rem 1rem; color:var(--slate);">
+        <p style="font-family:var(--font-serif); font-size:1.3rem; margin-bottom:0.5rem; color:var(--navy);">
+          Services coming soon
+        </p>
+        <p>We are updating our service listings. <a href="{% url 'main_site:contact' %}" style="color:var(--amber);">Contact us</a> to learn more.</p>
+      </div>
+    {% endif %}
+  </div>
+</section>
+
+{# ── BOTTOM CTA ── #}
+<section class="section section-white" style="text-align:center; padding:4rem 2rem;">
+  <div class="container" style="max-width:640px;">
+    <h2 class="section-title" style="margin-bottom:1rem;">Not sure which service you need?</h2>
+    <p style="color:var(--slate); margin-bottom:2rem;">
+      Book a free consultation. We'll assess your situation and recommend the right path.
+    </p>
+    <a href="{% url 'main_site:contact' %}" class="pub-btn pub-btn-primary">
+      {{ site_settings.hero_cta_text }} →
+    </a>
+  </div>
+</section>
+
+{% endblock %}

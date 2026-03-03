@@ -1,0 +1,109 @@
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Contact Messages{% endblock %}
+{% block topbar_title %}Contact Messages{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Contact Messages</h1>
+    <p class="page-subtitle">
+      Messages submitted via the public contact form.
+      {% if unread_count %}
+        <span class="badge badge-pending" style="margin-left:0.5rem;">
+          {{ unread_count }} unread
+        </span>
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+{% if messages %}
+  {% for message in messages %}
+    <div class="alert alert-{{ message.tags }}" style="margin-bottom:1rem;">{{ message }}</div>
+  {% endfor %}
+{% endif %}
+
+{% if contact_msgs %}
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Subject</th>
+          <th>Date</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for msg in contact_msgs %}
+          <tr {% if not msg.is_read %}style="background:#fffbeb;"{% endif %}>
+            <td style="font-weight:{% if not msg.is_read %}600{% else %}400{% endif %};">
+              {{ msg.name }}
+            </td>
+            <td>
+              <a href="mailto:{{ msg.email }}" style="color:var(--amber); text-decoration:none;">
+                {{ msg.email }}
+              </a>
+              {% if msg.phone %}
+                <br>
+                <span class="text-muted" style="font-size:0.8rem;">{{ msg.phone }}</span>
+              {% endif %}
+            </td>
+            <td>
+              {# Expandable row — clicking shows full message via details/summary #}
+              <details>
+                <summary style="cursor:pointer; font-weight:500;">{{ msg.subject }}</summary>
+                <div style="margin-top:0.5rem; font-size:0.875rem; color:var(--slate);
+                            white-space:pre-line; background:var(--cream);
+                            padding:0.75rem; border-left:3px solid var(--border);">
+                  {{ msg.message }}
+                </div>
+              </details>
+            </td>
+            <td class="text-muted">{{ msg.created_at|date:"M d, Y H:i" }}</td>
+            <td>
+              {% if msg.is_read %}
+                <span class="badge badge-neutral">Read</span>
+              {% else %}
+                <span class="badge badge-pending">Unread</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="POST" action="{% url 'admin_panel:contact_messages' %}">
+                {% csrf_token %}
+                <input type="hidden" name="message_id" value="{{ msg.id }}">
+                {% if msg.is_read %}
+                  <input type="hidden" name="action" value="mark_unread">
+                  <button type="submit" class="btn btn-sm btn-outline">
+                    Mark Unread
+                  </button>
+                {% else %}
+                  <input type="hidden" name="action" value="mark_read">
+                  <button type="submit" class="btn btn-sm btn-primary">
+                    Mark Read
+                  </button>
+                {% endif %}
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+{% else %}
+  <div class="card">
+    <div class="empty-state">
+      <p class="empty-state-title">No messages yet</p>
+      <p class="text-muted">
+        Messages submitted via <a href="{% url 'main_site:contact' %}"
+                                   style="color:var(--amber);">the contact form</a>
+        will appear here.
+      </p>
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

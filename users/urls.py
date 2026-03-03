@@ -5,5 +5,9 @@ from . import views
 urlpatterns = [
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
-    path('register/', views.register_view, name='register')
+    path('register/', views.register_view, name='register'),
+    path('notifications/', views.notifications_list, name='notifications_list'),
+
+    path('notifications/count/',   views.notifications_count,   name='notifications_count'),
+    path('notifications/preview/', views.notifications_preview, name='notifications_preview'),
 ]

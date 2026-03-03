@@ -7,7 +7,9 @@
       <h1 class="page-title">My Groups</h1>
       <p class="page-subtitle">Manage your family, business, and other group cases</p>
     </div>
-    <a href="{% url 'groups:group_create' %}" class="btn btn-primary">+ New Group</a>
+    {% if request.user.can_create_group %}
+      <a href="{% url 'groups:group_create' %}" class="btn btn-primary">+ New Group</a>
+    {% endif %}
   </div>
 {% if memberships %}
 <div class="grid-3">
@@ -36,10 +38,14 @@ View Group
 <div class="card">
 <div class="empty-state">
 <p class="empty-state-title">No groups yet</p>
-<p class="text-muted">Create a group to manage cases for your family or business.</p>
-<div style="margin-top:1.25rem;">
-<a href="{% url 'groups:group_create' %}" class="btn btn-primary">Create a Group</a>
-</div>
+{% if request.user.can_create_group %}
+  <p class="text-muted">Create a group to manage cases for your family or business.</p>
+  <div style="margin-top:1.25rem;">
+    <a href="{% url 'groups:group_create' %}" class="btn btn-primary">Create a Group</a>
+  </div>
+{% else %}
+  <p class="text-muted">You haven't been added to any groups yet. Contact your case manager to get started.</p>
+{% endif %}
 </div>
 </div>
 {% endif %}

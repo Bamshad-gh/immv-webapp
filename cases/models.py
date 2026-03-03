@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils.text import slugify
 
 
 # cases/models.py
@@ -26,8 +27,22 @@ from django.db import models
 
 class Service(models.Model):
     name        = models.CharField(max_length=100)
+    slug        = models.SlugField(max_length=120, unique=True, blank=True)
     description = models.TextField(blank=True, null=True)
     is_active   = models.BooleanField(default=True)
+
+    def save(self, *args, **kwargs):
+        # Auto-generate slug from name on first save.
+        # Appends a counter (-2, -3 …) if the slug is already taken.
+        if not self.slug:
+            base    = slugify(self.name)[:100]
+            slug    = base
+            counter = 2
+            while Service.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                slug = f'{base}-{counter}'
+                counter += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -52,9 +67,22 @@ class Category(models.Model):
         related_name='subcategories'    # category.subcategories.all()
     )
     name        = models.CharField(max_length=100)
+    slug        = models.SlugField(max_length=120, unique=True, blank=True)
     description = models.TextField(blank=True, null=True)
     created_at  = models.DateTimeField(auto_now_add=True)
     is_active   = models.BooleanField(default=True)
+
+    def save(self, *args, **kwargs):
+        # Auto-generate slug from name on first save. Duplicates get -2, -3 …
+        if not self.slug:
+            base    = slugify(self.name)[:100]
+            slug    = base
+            counter = 2
+            while Category.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                slug = f'{base}-{counter}'
+                counter += 1
+            self.slug = slug
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name

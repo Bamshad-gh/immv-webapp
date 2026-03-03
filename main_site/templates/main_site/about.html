@@ -1,0 +1,72 @@
+{% extends "main_site/base_public.html" %}
+
+{% block meta_title %}About Us{% endblock %}
+{% block meta_description %}{{ site_settings.about_body|truncatechars:155 }}{% endblock %}
+
+{% block content %}
+
+{# ── HEADER ── #}
+<section class="section section-navy" style="padding:5rem 2rem 4rem;">
+  <div class="container">
+    <p class="pub-tag" style="margin-bottom:1rem;">Who We Are</p>
+    <h1 class="section-title" style="color:var(--white);">{{ site_settings.about_title }}</h1>
+  </div>
+</section>
+
+{# ── ABOUT BODY ── #}
+<section class="section section-white">
+  <div class="container" style="max-width:820px;">
+    <div style="font-size:1.05rem; line-height:1.85; color:var(--slate); white-space:pre-line;">
+      {{ site_settings.about_body }}
+    </div>
+  </div>
+</section>
+
+{# ── WHY US PILLARS ── #}
+<section class="section section-cream">
+  <div class="container">
+    <h2 class="section-title text-center" style="margin-bottom:0.5rem;">Why Choose Us</h2>
+    <p class="section-subtitle text-center" style="margin:0 auto 2.5rem;">
+      {# EXPAND: move these pillars to SiteSettings so admin can edit them #}
+    </p>
+
+    <div class="cards-grid" style="text-align:center;">
+
+      <div class="pub-card">
+        <div style="font-size:2rem; margin-bottom:1rem;">✦</div>
+        <h3 class="pub-card-title">Expert Knowledge</h3>
+        <p class="pub-card-text">Years of experience navigating complex immigration law and policy changes.</p>
+      </div>
+
+      <div class="pub-card">
+        <div style="font-size:2rem; margin-bottom:1rem;">✦</div>
+        <h3 class="pub-card-title">Transparent Process</h3>
+        <p class="pub-card-text">Track every step of your case in real time through our secure client portal.</p>
+      </div>
+
+      <div class="pub-card">
+        <div style="font-size:2rem; margin-bottom:1rem;">✦</div>
+        <h3 class="pub-card-title">Personalized Service</h3>
+        <p class="pub-card-text">Every case is unique. We tailor our approach to your individual circumstances.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+{# ── CONTACT CTA ── #}
+<section class="section section-navy" style="text-align:center;">
+  <div class="container" style="max-width:640px;">
+    <h2 class="section-title" style="color:var(--white); margin-bottom:1rem;">
+      Let's work together
+    </h2>
+    <p style="color:rgba(255,255,255,0.65); margin-bottom:2rem;">
+      Schedule a consultation and take the first step toward your immigration goals.
+    </p>
+    <a href="{% url 'main_site:contact' %}" class="pub-btn pub-btn-primary">
+      {{ site_settings.hero_cta_text }} →
+    </a>
+  </div>
+</section>
+
+{% endblock %}

@@ -60,6 +60,34 @@ EXPAND: add an edit profile section at the top.
   </div>
 </div>
 
+<!-- User Permissions -->
+<div class="card" style="margin-bottom:1rem;">
+  <div class="card-header">User Permissions</div>
+  <p style="font-size:0.85rem; color:var(--slate); margin-bottom:1rem;">
+    Control what this user is allowed to do on the platform.
+  </p>
+  <div style="display:flex; align-items:center; justify-content:space-between;
+              padding:0.75rem 0; border-top:1px solid var(--border);">
+    <div>
+      <div style="font-weight:500; font-size:0.9rem;">Create Groups</div>
+      <div class="text-muted text-small">
+        Allow this user to create and manage groups (family, business, etc.)
+      </div>
+    </div>
+    <form method="POST"
+          action="{% url 'admin_panel:admin_view_user' target_user.id %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="toggle_can_create_group">
+      {% if target_user.can_create_group %}
+        <button type="submit" class="btn btn-sm btn-danger">Revoke</button>
+      {% else %}
+        <button type="submit" class="btn btn-sm btn-success">Grant</button>
+      {% endif %}
+    </form>
+  </div>
+  {# EXPAND: add more permission rows here as new user permissions are added to the User model #}
+</div>
+
 <!-- Personal Cases -->
 <div class="card" style="margin-bottom:1rem;">
   <div class="card-header">Personal Cases</div>
