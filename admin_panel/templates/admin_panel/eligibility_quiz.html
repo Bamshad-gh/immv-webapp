@@ -1,0 +1,367 @@
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/eligibility_quiz.html
+
+Eligibility Quiz — lets admin fill in eligibility answers on behalf
+of a user for questions that CANNOT be auto-filled from their profile.
+
+Context variables (from eligibility_quiz view):
+  target_user  — User object being quizzed
+  questions    — list of dicts:
+                   req          → Requirement object
+                   from_profile → bool: True = auto-answered from profile
+                   profile_value→ the auto-filled value (string/date/None)
+                   quiz_answer  → EligibilityAnswer | None (previous answer)
+  quiz_url     — form action (current URL)
+
+EXPAND: add a progress bar showing how many questions remain unanswered.
+EXPAND: group questions by category to make them easier to scan.
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Eligibility Quiz — {{ target_user.email }}{% endblock %}
+{% block topbar_title %}Eligibility Quiz{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ── Page layout ─────────────────────────────────────────── */
+  .quiz-wrap {
+    max-width: 680px;
+  }
+
+  /* ── User header card ────────────────────────────────────── */
+  .quiz-user-card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .85rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    margin-bottom: 1.5rem;
+  }
+  .quiz-user-avatar {
+    width: 38px; height: 38px;
+    background: var(--navy);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 1rem;
+    flex-shrink: 0;
+  }
+  .quiz-user-name  { font-weight: 600; font-size: .95rem; }
+  .quiz-user-email { font-size: .82rem; color: var(--slate); }
+
+  /* ── Question card ───────────────────────────────────────── */
+  .quiz-question {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: .85rem;
+  }
+  /* Profile-answered questions get a green left border — visual cue */
+  .quiz-question.from-profile {
+    border-left: 4px solid #22c55e;
+  }
+  /* Unanswered questions (no profile, no quiz answer) get an amber border */
+  .quiz-question.unanswered {
+    border-left: 4px solid #f59e0b;
+  }
+  /* Already answered via quiz — blue-ish border */
+  .quiz-question.has-answer {
+    border-left: 4px solid #6366f1;
+  }
+
+  .quiz-q-label {
+    font-weight: 600;
+    font-size: .93rem;
+    margin-bottom: .5rem;
+    display: block;
+  }
+
+  .quiz-q-source {
+    font-size: .78rem;
+    color: var(--slate);
+    margin-bottom: .5rem;
+    display: block;
+  }
+
+  /* Read-only value shown for profile-answered questions */
+  .quiz-profile-value {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 5px;
+    padding: .35rem .65rem;
+    font-size: .88rem;
+    color: #166534;
+    display: inline-block;
+    margin-top: .2rem;
+  }
+
+  /* Previous quiz answer badge */
+  .quiz-prev-answer {
+    font-size: .78rem;
+    color: #6366f1;
+    margin-top: .2rem;
+    display: block;
+  }
+
+  /* Input / select width */
+  .quiz-input {
+    width: 100%;
+    max-width: 340px;
+    margin-top: .35rem;
+  }
+
+  /* ── Divider between sections ────────────────────────────── */
+  .quiz-section-header {
+    font-size: .78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--slate);
+    margin: 1.5rem 0 .65rem;
+    padding-bottom: .35rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Summary bar at top ──────────────────────────────────── */
+  .quiz-summary {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+  }
+  .quiz-summary-chip {
+    font-size: .8rem;
+    padding: .25rem .7rem;
+    border-radius: 99px;
+    font-weight: 600;
+  }
+  .chip-profile  { background: #dcfce7; color: #166534; }
+  .chip-answered { background: #ede9fe; color: #4338ca; }
+  .chip-pending  { background: #fef9c3; color: #92400e; }
+  .chip-none     { background: #f1f5f9; color: #475569; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Eligibility Quiz</h1>
+  <p class="page-subtitle" style="color:var(--slate); font-size:.9rem; margin-top:.25rem;">
+    Fill in eligibility answers that cannot be auto-filled from the client's profile.
+  </p>
+</div>
+
+<div class="quiz-wrap">
+
+  <!-- ── User header ──────────────────────────────────────────
+       Shows who we're filling this quiz for, with a quick-link
+       to the user proxy view.
+  ────────────────────────────────────────────────────────────── -->
+  <div class="quiz-user-card">
+    <div class="quiz-user-avatar">
+      {{ target_user.first_name|first|upper|default:target_user.email|first|upper }}
+    </div>
+    <div>
+      <div class="quiz-user-name">
+        {% if target_user.first_name %}
+          {{ target_user.first_name }} {{ target_user.last_name }}
+        {% else %}
+          {{ target_user.email }}
+        {% endif %}
+      </div>
+      <div class="quiz-user-email">{{ target_user.email }}</div>
+    </div>
+    <div style="flex:1;"></div>
+    <a href="{% url 'admin_panel:admin_view_user' user_id=target_user.id %}"
+       class="btn btn-outline" style="font-size:.8rem; padding:.3rem .7rem;">
+      View Profile
+    </a>
+    <a href="{% url 'admin_panel:service_browser' %}?user_email={{ target_user.email|urlencode }}"
+       class="btn btn-outline" style="font-size:.8rem; padding:.3rem .7rem;">
+      Service Browser
+    </a>
+  </div>
+
+  <!-- ── Summary chips ────────────────────────────────────────
+       Quick count: how many questions are profile-answered,
+       quiz-answered, and still pending. Helps admin gauge effort.
+  ────────────────────────────────────────────────────────────── -->
+  {% with total=questions|length %}
+  {% if total > 0 %}
+  <div class="quiz-summary">
+    <!-- Count each type — we can't do math in templates easily,
+         so we use the |length filter on filtered lists isn't possible.
+         Instead the view could pass counts, but we avoid over-engineering —
+         the chips are computed in the template via counters below. -->
+    <span class="quiz-summary-chip chip-none">
+      {{ total }} eligibility question{{ total|pluralize }}
+    </span>
+    {% with profile_count=0 %}
+    {# We display the per-type counts as static labels — the CSS colouring #}
+    {# of each question row already gives the admin the breakdown visually. #}
+    {% endwith %}
+  </div>
+  {% endif %}
+  {% endwith %}
+
+  {% if not questions %}
+  <!-- ── Empty state ──────────────────────────────────────────
+       No eligibility-gate requirements exist in the system yet.
+       Guide the admin to create some in the builder.
+  ────────────────────────────────────────────────────────────── -->
+  <div class="card" style="text-align:center; color:var(--slate); padding:2.5rem;">
+    <p style="margin-bottom:.75rem;">No eligibility requirements have been set up yet.</p>
+    <a href="{% url 'admin_panel:service_builder' %}" class="btn btn-primary">
+      Open Service Builder →
+    </a>
+  </div>
+
+  {% else %}
+
+  <!-- ── Quiz Form ─────────────────────────────────────────────
+       POST to the same URL. The view handles upsert logic.
+  ────────────────────────────────────────────────────────────── -->
+  <form method="POST" action="{{ quiz_url }}">
+    {% csrf_token %}
+
+    <!-- ── Profile-answered section — read-only ───────────────
+         Shown for transparency: admin sees WHAT was auto-filled
+         and from which profile field. They cannot override these
+         here — to change them the admin edits the user's profile.
+         EXPAND: add an "override" toggle if edge-cases require it.
+    ────────────────────────────────────────────────────────────── -->
+    {% with has_profile=False %}
+    {% for item in questions %}{% if item.from_profile %}{% if not has_profile %}
+    <div class="quiz-section-header">Auto-filled from profile (read-only)</div>
+    {% endif %}
+    <div class="quiz-question from-profile">
+      <span class="quiz-q-label">{{ item.req.name }}</span>
+      {% if item.req.profile_mapping %}
+      <span class="quiz-q-source">Source: profile.{{ item.req.profile_mapping }}</span>
+      {% endif %}
+      <!-- Display the auto-resolved value -->
+      <div class="quiz-profile-value">{{ item.profile_value }}</div>
+      <!-- Hidden input NOT included — profile values are not re-submitted.
+           The scoring engine reads them directly from the profile. -->
+    </div>
+    {% endif %}{% endfor %}
+    {% endwith %}
+
+    <!-- ── Questions requiring manual input ───────────────────
+         Only requirements with no profile mapping (or profile field
+         is empty) appear here as editable inputs.
+    ────────────────────────────────────────────────────────────── -->
+    {% with has_manual=False %}
+    {% for item in questions %}{% if not item.from_profile %}{% if not has_manual %}
+    <div class="quiz-section-header">Questions to answer</div>
+    {% endif %}
+
+    <div class="quiz-question {% if item.quiz_answer %}has-answer{% else %}unanswered{% endif %}">
+      <label class="quiz-q-label" for="elig_{{ item.req.id }}">
+        {{ item.req.name }}
+      </label>
+
+      <!-- Show the operator + threshold as a hint so the admin
+           understands what value is needed to pass. -->
+      {% if item.req.eligibility_operator and item.req.eligibility_value %}
+      <span class="quiz-q-source">
+        Condition: {{ item.req.get_eligibility_operator_display }}
+        {{ item.req.eligibility_value }}
+      </span>
+      {% endif %}
+
+      <!-- If a quiz answer already exists, show it as a note -->
+      {% if item.quiz_answer %}
+      <span class="quiz-prev-answer">
+        Current answer:
+        {% if item.quiz_answer.answer_date %}
+          {{ item.quiz_answer.answer_date|date:"Y-m-d" }}
+        {% else %}
+          {{ item.quiz_answer.answer_text }}
+        {% endif %}
+      </span>
+      {% endif %}
+
+      <!-- ── Input field — type depends on Requirement.type ────
+           date    → native date picker
+           boolean → Yes / No select
+           select  → dropdown from RequirementChoice objects
+           text    → plain text input (default)
+           EXPAND: add number type with min/max validation.
+      ─────────────────────────────────────────────────────────── -->
+
+      {% if item.req.type == 'date' %}
+        <!-- Date input — value pre-filled if a quiz answer exists -->
+        <input
+          type="date"
+          id="elig_{{ item.req.id }}"
+          name="elig_{{ item.req.id }}"
+          class="quiz-input"
+          value="{% if item.quiz_answer and item.quiz_answer.answer_date %}{{ item.quiz_answer.answer_date|date:'Y-m-d' }}{% endif %}">
+
+      {% elif item.req.type == 'boolean' %}
+        <!-- Boolean — Yes/No select -->
+        <select
+          id="elig_{{ item.req.id }}"
+          name="elig_{{ item.req.id }}"
+          class="quiz-input">
+          <option value="">— select —</option>
+          <option value="yes"
+            {% if item.quiz_answer and item.quiz_answer.answer_text == 'yes' %}selected{% endif %}>
+            Yes
+          </option>
+          <option value="no"
+            {% if item.quiz_answer and item.quiz_answer.answer_text == 'no' %}selected{% endif %}>
+            No
+          </option>
+        </select>
+
+      {% elif item.req.type == 'select' %}
+        <!-- Select — options from RequirementChoice objects -->
+        <select
+          id="elig_{{ item.req.id }}"
+          name="elig_{{ item.req.id }}"
+          class="quiz-input">
+          <option value="">— select —</option>
+          {% for choice in item.req.choices.all %}
+            <option value="{{ choice.value }}"
+              {% if item.quiz_answer and item.quiz_answer.answer_text == choice.value %}
+                selected
+              {% endif %}>
+              {{ choice.label }}
+            </option>
+          {% endfor %}
+        </select>
+
+      {% else %}
+        <!-- Default: plain text input -->
+        <input
+          type="text"
+          id="elig_{{ item.req.id }}"
+          name="elig_{{ item.req.id }}"
+          class="quiz-input"
+          placeholder="Enter answer…"
+          value="{% if item.quiz_answer %}{{ item.quiz_answer.answer_text }}{% endif %}">
+      {% endif %}
+
+    </div><!-- /quiz-question -->
+    {% endif %}{% endfor %}
+    {% endwith %}
+
+    <!-- ── Submit bar ─────────────────────────────────────────
+         Cancel goes back to the service browser.
+    ────────────────────────────────────────────────────────────── -->
+    <div class="divider"></div>
+    <div class="flex-between" style="margin-top:1rem;">
+      <a href="{% url 'admin_panel:service_browser' %}?user_email={{ target_user.email|urlencode }}"
+         class="btn btn-outline">
+        Cancel
+      </a>
+      <button type="submit" class="btn btn-primary">Save Answers</button>
+    </div>
+
+  </form>
+  {% endif %}<!-- /questions -->
+
+</div><!-- /quiz-wrap -->
+{% endblock %}

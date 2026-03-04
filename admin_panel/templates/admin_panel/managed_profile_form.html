@@ -1,0 +1,269 @@
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Add Interior Person &mdash; {{ group.name }}{% endblock %}
+{% block topbar_title %}Add Interior Person{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ── Two-column split card layout ────────────────────────────── */
+  /* Each half-card sits in a column. On narrow screens they stack. */
+  .split-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 768px) {
+    .split-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ── Upload preview ──────────────────────────────────────────── */
+  /* Shows a small image thumbnail when the user picks a file. */
+  .upload-preview {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    margin-top: 0.5rem;
+    display: none;  /* hidden until a file is selected; shown by JS #}
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── BREADCRUMB ────────────────────────────────────────────────── #}
+<div class="text-muted text-small mb-2">
+  <a href="{% url 'admin_panel:group_list' %}" style="color:var(--amber);">Groups</a>
+  &rsaquo;
+  <a href="{% url 'admin_panel:group_detail' group.id %}" style="color:var(--amber);">{{ group.name }}</a>
+  &rsaquo; Add Interior Person
+</div>
+
+{# ── INFO BANNER ───────────────────────────────────────────────── #}
+{# WHY: Explains the concept of an interior person before the form — #}
+{# reduces user confusion about what "no account" means.            #}
+<div class="message" style="margin-bottom:1.25rem; background:var(--amber-light, #fef9ef);
+     border-left:3px solid var(--amber); color:var(--navy); font-size:0.85rem; line-height:1.6;">
+  <strong>Interior Person</strong> &mdash; This person has no login account.
+  Their cases are managed on their behalf by you or other group members with permission.
+  <br>
+  After creating the profile, you can link it to a user account if they register later.
+</div>
+
+{# ── enctype="multipart/form-data" is REQUIRED for file uploads ── #}
+{# Without it, FileField / ImageField values are never sent to the server. #}
+<form method="POST" enctype="multipart/form-data" novalidate>
+{% csrf_token %}
+
+{# ── NON-FIELD ERRORS (cross-field validation from clean()) ─────── #}
+{% if form.non_field_errors %}
+<div class="message message-error" style="margin-bottom:1rem;">{{ form.non_field_errors }}</div>
+{% endif %}
+
+
+{# ══════════════════════════════════════════════════════════════════
+   SECTION 1 — IDENTITY  (left)  +  ORIGIN  (right)
+   Identity: name, DOB, gender.
+   Origin:   country, city, passport number.
+   Two equal columns so the form doesn't stretch on wide screens.
+═══════════════════════════════════════════════════════════════════ #}
+<div class="split-grid" style="margin-bottom:1rem;">
+
+  {# ── LEFT: Identity ──────────────────────────────────────────── #}
+  <div class="card">
+    <div class="card-header">Identity</div>
+    <div style="padding:1.25rem;">
+
+      <div class="form-group">
+        <label for="{{ form.first_name.id_for_label }}">{{ form.first_name.label }}</label>
+        {{ form.first_name }}
+        {% if form.first_name.errors %}
+          <div class="message message-error" style="margin-top:0.3rem;">{{ form.first_name.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.last_name.id_for_label }}">{{ form.last_name.label }}</label>
+        {{ form.last_name }}
+        {% if form.last_name.errors %}
+          <div class="message message-error" style="margin-top:0.3rem;">{{ form.last_name.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.date_of_birth.id_for_label }}">{{ form.date_of_birth.label }}</label>
+        {# type="date" renders as a native date picker — set via DateInput widget in forms.py #}
+        {{ form.date_of_birth }}
+        {% if form.date_of_birth.errors %}
+          <div class="message message-error" style="margin-top:0.3rem;">{{ form.date_of_birth.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.gender.id_for_label }}">{{ form.gender.label }}</label>
+        {{ form.gender }}
+        {% if form.gender.errors %}
+          <div class="message message-error" style="margin-top:0.3rem;">{{ form.gender.errors }}</div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>{# /identity #}
+
+  {# ── RIGHT: Origin ───────────────────────────────────────────── #}
+  <div class="card">
+    <div class="card-header">Origin &amp; Travel Document</div>
+    <div style="padding:1.25rem;">
+
+      <div class="form-group">
+        <label for="{{ form.country_of_birth.id_for_label }}">{{ form.country_of_birth.label }}</label>
+        {{ form.country_of_birth }}
+        {% if form.country_of_birth.errors %}
+          <div class="message message-error" style="margin-top:0.3rem;">{{ form.country_of_birth.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.city_of_birth.id_for_label }}">{{ form.city_of_birth.label }}</label>
+        {{ form.city_of_birth }}
+        {% if form.city_of_birth.errors %}
+          <div class="message message-error" style="margin-top:0.3rem;">{{ form.city_of_birth.errors }}</div>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label for="{{ form.passport_number.id_for_label }}">{{ form.passport_number.label }}</label>
+        {{ form.passport_number }}
+        {% if form.passport_number.errors %}
+          <div class="message message-error" style="margin-top:0.3rem;">{{ form.passport_number.errors }}</div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>{# /origin #}
+
+</div>{# /split-grid: identity + origin #}
+
+
+{# ══════════════════════════════════════════════════════════════════
+   SECTION 2 — FILE UPLOADS (full width)
+   Passport scan + profile photo.
+   Full width because upload inputs and previews need more room.
+═══════════════════════════════════════════════════════════════════ #}
+<div class="card" style="margin-bottom:1rem;">
+  <div class="card-header">Documents &amp; Photos</div>
+  <div style="padding:1.25rem; display:grid; grid-template-columns:1fr 1fr; gap:1.5rem;">
+
+    {# Passport picture upload #}
+    <div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="{{ form.passport_picture.id_for_label }}">{{ form.passport_picture.label }}</label>
+        {# data-preview ties this input to the <img> preview below via JS #}
+        {{ form.passport_picture }}
+        {% if form.passport_picture.errors %}
+          <div class="message message-error" style="margin-top:0.3rem;">{{ form.passport_picture.errors }}</div>
+        {% endif %}
+      </div>
+      {# Preview image — hidden until file is selected #}
+      <img id="preview-passport" class="upload-preview" alt="Passport preview">
+    </div>
+
+    {# Profile picture upload #}
+    <div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label for="{{ form.profile_picture.id_for_label }}">{{ form.profile_picture.label }}</label>
+        {{ form.profile_picture }}
+        {% if form.profile_picture.errors %}
+          <div class="message message-error" style="margin-top:0.3rem;">{{ form.profile_picture.errors }}</div>
+        {% endif %}
+      </div>
+      <img id="preview-profile" class="upload-preview" alt="Profile photo preview">
+    </div>
+
+  </div>
+</div>{# /uploads card #}
+
+
+{# ══════════════════════════════════════════════════════════════════
+   SECTION 3 — GROUP OPTIONS (full width)
+   new_group_name: optional — creates a dedicated group for this person.
+   WHY optional: most of the time the profile just joins the current group.
+   WHY separate card: makes the optional nature visually obvious.
+═══════════════════════════════════════════════════════════════════ #}
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header">Group Assignment <span style="font-weight:400; font-size:0.82rem; text-transform:none;">(optional)</span></div>
+  <div style="padding:1.25rem;">
+
+    <p class="text-muted" style="font-size:0.83rem; margin-bottom:1rem; line-height:1.6;">
+      By default this person is added to <strong>{{ group.name }}</strong>.
+      Fill in the field below to instead create a <strong>dedicated group</strong>
+      exclusively for them — useful when this person will have their own file separate from the main group.
+    </p>
+
+    <div class="form-group" style="margin-bottom:0;">
+      <label for="{{ form.new_group_name.id_for_label }}">{{ form.new_group_name.label }}</label>
+      {{ form.new_group_name }}
+      {% if form.new_group_name.help_text %}
+        <p class="text-muted text-small" style="margin-top:0.3rem;">{{ form.new_group_name.help_text }}</p>
+      {% endif %}
+      {% if form.new_group_name.errors %}
+        <div class="message message-error" style="margin-top:0.3rem;">{{ form.new_group_name.errors }}</div>
+      {% endif %}
+    </div>
+
+  </div>
+</div>{# /group options card #}
+
+
+{# ── ACTION BUTTONS ────────────────────────────────────────────── #}
+<div style="display:flex; gap:0.75rem;">
+  <button type="submit" class="btn btn-primary">Create Profile</button>
+  <a href="{% url 'admin_panel:group_detail' group.id %}" class="btn btn-outline">Cancel</a>
+</div>
+
+</form>
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+// ── Upload preview: show a thumbnail when user picks a file ────────
+// WHY: immediate visual feedback that the right file was selected
+// without having to submit the form first.
+(function () {
+  'use strict';
+
+  function wirePreview(inputId, previewId) {
+    // inputId  — id attribute of the <input type="file"> element
+    // previewId — id attribute of the <img> preview element
+    var input   = document.getElementById(inputId);
+    var preview = document.getElementById(previewId);
+
+    if (!input || !preview) { return; }   // safety: skip if DOM elements not found
+
+    input.addEventListener('change', function () {
+      var file = this.files[0];
+      if (!file) {
+        // User cleared the selection — hide the preview
+        preview.style.display = 'none';
+        preview.src           = '';
+        return;
+      }
+      // FileReader reads the file locally without uploading it yet.
+      // onload fires when reading is complete; result is a data URL.
+      var reader  = new FileReader();
+      reader.onload = function (e) {
+        preview.src           = e.target.result;
+        preview.style.display = 'block';  // make visible now that we have a URL
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Wire up both upload fields to their preview images.
+  // IDs must match what Django renders for ImageField inputs.
+  wirePreview('id_passport_picture', 'preview-passport');
+  wirePreview('id_profile_picture',  'preview-profile');
+}());
+</script>
+{% endblock %}

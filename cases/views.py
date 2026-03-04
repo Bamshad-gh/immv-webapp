@@ -61,21 +61,28 @@ def user_pickedCases_detail(request, case_id):
 
     # ── ACCESS CHECK ──────────────────────────────────────────
     # Allow access if ANY of these are true:
-    #   1. They submitted the case themselves
-    #   2. They created the managed profile this case belongs to
+    #   1. They submitted the case themselves (case.user == requester)
+    #   2. They created the managed profile AND created_by is not null
+    #      (Phase 3: created_by is now nullable — group-level profiles have no specific owner)
     #   3. They are an active group member with can_fill_cases permission
+    #      This also covers managed profiles where created_by is null — any authorized
+    #      group member can fill cases for any managed profile in their group.
     is_case_owner    = (case.user == request.user)
     is_profile_owner = (
         case.managed_profile and
+        case.managed_profile.created_by is not None and
         case.managed_profile.created_by == request.user
     )
     is_group_member_with_permission = False
 
-    if case.group:
+    # Check group membership — covers both group cases AND managed profile cases
+    # (managed profile's group is used when the case has no direct group FK)
+    check_group = case.group or (case.managed_profile and case.managed_profile.group)
+    if check_group:
         try:
             membership = GroupMembership.objects.get(
                 user=request.user,
-                group=case.group,
+                group=check_group,
                 is_active=True
             )
             is_group_member_with_permission = membership.can_fill_cases()
@@ -100,8 +107,22 @@ def user_pickedCases_detail(request, case_id):
     # RequirementForm expects Requirement objects, not CaseRequirement objects
     requirement_objects = [cr.requirement for cr in requirements]
 
-    existing_answers = CaseAnswer.objects.filter(case=case)
-    initial          = build_initial(existing_answers)
+    # Phase 2: pass case + user + requirements so build_initial() can auto-fill
+    # from profile_mapping and from previous case answers.
+    # select_related fetches answer_choice in the same query (avoids N+1 for select-type answers).
+    existing_answers = (
+        CaseAnswer.objects
+        .filter(case=case)
+        .select_related('requirement', 'answer_choice')
+    )
+    initial, auto_filled_ids = build_initial(
+        existing_answers,
+        case         = case,
+        user         = request.user,
+        requirements = requirement_objects,
+    )
+    # auto_filled_ids: set of requirement IDs pre-filled by the system (not the user).
+    # Passed to the template to show "Auto-filled ✓" badges next to those fields.
 
     # ── POST — validate and save ──────────────────────────────
     if request.method == 'POST':
@@ -112,7 +133,7 @@ def user_pickedCases_detail(request, case_id):
             initial=initial
         )
         if form.is_valid():
-            save_answers(form, case, requirement_objects)
+            save_answers(form, case, requirement_objects, auto_filled_ids=auto_filled_ids)
             messages.success(request, 'Answers saved successfully!')
             return redirect('cases:case-detail', case_id=case_id)
 
@@ -120,7 +141,15 @@ def user_pickedCases_detail(request, case_id):
     else:
         form = RequirementForm(requirement_objects, initial=initial)
 
+    # Convert auto_filled_ids set to a list of HTML field names for the template.
+    # Field names match RequirementForm's naming pattern: 'req_<id>'.
+    # The template uses this list to add auto-fill badges via JavaScript.
+    auto_filled_fields = [f'req_{rid}' for rid in auto_filled_ids]
+
     return render(request, 'cases/user_pickedCases_detail.html', {
-        'case': case,
-        'form': form,
+        'case':               case,
+        'form':               form,
+        'requirements':       requirement_objects,   # for info_text display
+        'auto_filled_fields': auto_filled_fields,    # list of field names — for JS badge rendering
+        'auto_filled_ids':    auto_filled_ids,       # original set — for save_answers on POST
     })

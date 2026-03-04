@@ -763,6 +763,20 @@ EXPAND:    add new nav sections using the comment block at the bottom
             <span class="nav-text">Builder</span>
           </a>
         </li>
+        <!-- Service Browser — hierarchical service → category view with eligibility % badges.
+             EXPAND: hide behind a separate can_view_eligibility permission if needed. -->
+        <li>
+          <a href="{% url 'admin_panel:service_browser' %}" data-tooltip="Service Browser">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <!-- Bar chart icon — represents eligibility scores -->
+              <line x1="18" y1="20" x2="18" y2="10"/>
+              <line x1="12" y1="20" x2="12" y2="4"/>
+              <line x1="6"  y1="20" x2="6"  y2="14"/>
+            </svg>
+            <span class="nav-text">Service Browser</span>
+          </a>
+        </li>
       </ul>
       {% endif %}
 

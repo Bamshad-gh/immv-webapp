@@ -1,9 +1,12 @@
 # groups/forms.py
 # ─────────────────────────────────────────────────────────────
 # What's in this file (in order):
-#   1. GroupCreateForm      — create a group + its type-specific extra info
-#   2. AddMemberForm        — add an existing user to a group with a role
-#   3. ManagedProfileForm   — create an interior person (no account needed)
+#   1. GroupCreateForm    — create a group + its type-specific extra info
+#   2. AddMemberForm      — add an existing user to a group with a role
+#   3. ManagedProfileForm — create an interior person (no account needed)
+#
+# Case assignment, bulk assignment, and managed-profile linking are
+# ADMIN PANEL operations — see admin_panel/forms.py for those forms.
 #
 # All forms validate in clean() and never trust raw POST data.
 # ─────────────────────────────────────────────────────────────
@@ -191,6 +194,26 @@ class AddMemberForm(forms.Form):
 # EXPAND: add a 'relationship' field (e.g., "mother", "employee") if needed.
 
 class ManagedProfileForm(forms.ModelForm):
+    """
+    Creates a ManagedProfile (interior person, no login account).
+    Two group assignment modes:
+      1. Default: person joins the group from the URL.
+      2. new_group_name filled → a new dedicated group is created for this person.
+    'created_by' and 'group' are set in the view.
+
+    CUSTOMIZE: update fields list to match what your project collects.
+    EXPAND: add a 'relationship' field (e.g., "mother", "employee") if needed.
+    """
+
+    # Optional: create a brand-new group just for this interior person
+    # WHY non-model? No DB column — purely a creation-time convenience handled in view.
+    new_group_name = forms.CharField(
+        required  = False,
+        label     = 'Create a dedicated group for this person (optional)',
+        help_text = 'Leave blank to add this person to the current group. '
+                    'Fill in a name to create a new group exclusively for them.',
+        widget    = forms.TextInput(attrs={'placeholder': 'e.g. Doe Family File'}),
+    )
 
     class Meta:
         model  = ManagedProfile

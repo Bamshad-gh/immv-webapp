@@ -1,0 +1,66 @@
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Assign Case{% endblock %}
+{% block topbar_title %}Assign Case{% endblock %}
+
+{% block content %}
+<div style="max-width:560px;">
+
+  <div class="text-muted text-small mb-2">
+    <a href="{% url 'admin_panel:group_list' %}" style="color:var(--amber);">Groups</a>
+    &rsaquo;
+    <a href="{% url 'admin_panel:group_detail' group.id %}" style="color:var(--amber);">{{ group.name }}</a>
+    &rsaquo; Assign Case
+  </div>
+
+  <div class="card">
+
+    <div class="card-header">
+      {% if target_type == 'managed' %}
+        Assign Case to Interior Person
+      {% else %}
+        Assign Case to Member
+      {% endif %}
+    </div>
+
+    <div style="padding:1.5rem;">
+
+      <!-- Who is this case being assigned to?
+         WHY show this? Prevents assigning to the wrong person before picking a category. -->
+      <div style="background:var(--sidebar-bg,#0f1923); color:#fff;
+                  border:1px solid var(--border); padding:0.75rem 1rem; margin-bottom:1.5rem; font-size:0.9rem;">
+        <span class="text-muted">Assigning to:</span>
+        &nbsp;
+        <strong>{{ target_label }}</strong>
+        <span class="text-muted text-small">
+          {% if target_type == 'managed' %}(interior person &mdash; no account){% else %}(group member){% endif %}
+        </span>
+      </div>
+
+      <form method="POST" novalidate>
+        {% csrf_token %}
+
+        <div class="form-group">
+          <label for="{{ form.category.id_for_label }}">{{ form.category.label }}</label>
+          {{ form.category }}
+          {% if form.category.errors %}
+            <div class="message message-error" style="margin-top:0.5rem;">{{ form.category.errors }}</div>
+          {% endif %}
+          <p class="text-muted text-small" style="margin-top:0.4rem;">
+            A new case with this category is created. Admin can then edit requirements in the case detail view.
+          </p>
+        </div>
+
+        {% if form.non_field_errors %}
+          <div class="message message-error">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <div style="display:flex; gap:0.75rem; margin-top:1.5rem;">
+          <button type="submit" class="btn btn-primary">Create Case</button>
+          <a href="{% url 'admin_panel:group_detail' group.id %}" class="btn btn-outline">Cancel</a>
+        </div>
+      </form>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

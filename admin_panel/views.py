@@ -56,18 +56,25 @@ from openpyxl.styles import Font, PatternFill, Alignment
 
 from .decorators import admin_required, superadmin_required, admin_permission_required 
 from django.views.decorators.csrf import ensure_csrf_cookie
-from .forms import AdminLoginForm, CreateUserForm, CreateAdminForm, CreateCaseForm
-from users.models import AdminProfile
-from groups.models import Group, GroupMembership , Role , GroupPermission
-from cases.models import Case, CaseAnswer, CaseRequirement, Category, Service, Requirement
-from .forms import AdminGroupCreateForm, AdminAddMemberForm
+from .forms import (
+    AdminLoginForm, CreateUserForm, CreateAdminForm, CreateCaseForm,
+    AdminGroupCreateForm, AdminAddMemberForm,
+    AdminAssignCaseForm, AdminLinkManagedForm, AdminManagedProfileForm,
+)
+from users.models import AdminProfile, ManagedProfile
+from groups.models import Group, GroupMembership, Role, GroupPermission
+from cases.models import (
+    Case, CaseAnswer, CaseRequirement,
+    Category, Service, Requirement,
+    RequirementSection, RequirementChoice, CategoryRequirement,   # Phase 1 library models
+)
 from django.contrib.auth import get_user_model
 
 import json
 from django.views.decorators.http import require_http_methods
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Sum, Max
 from decimal import Decimal
 from tasks.models import Task, notify_task_assigned
 from payments.models import Invoice, Payment
@@ -448,12 +455,21 @@ def case_detail(request, case_id):
         for cr in case_requirements
     ]
 
-    # Requirements available to add as extras
+    # Requirements available to add as extras.
+    # Phase 1 removed Requirement.category FK — traverse the M2M bridge instead.
+    # category_requirements__category is the reverse of CategoryRequirement.category FK,
+    # filtering to only requirements that are linked to THIS case's category.
+    # .distinct() is required because a requirement could theoretically be linked
+    # more than once (unique_together prevents it, but .distinct() is defensive).
     existing_req_ids = [row['req'].id for row in requirement_rows]
     available_to_add = (
         Requirement.objects
-        .filter(category=case.category, is_active=True)
+        .filter(
+            category_requirements__category=case.category,  # via CategoryRequirement bridge
+            is_active=True
+        )
         .exclude(id__in=existing_req_ids)
+        .distinct()
     )
 
     return render(request, 'admin_panel/case_detail.html', {
@@ -483,25 +499,28 @@ def create_case(request):
         if form.is_valid():
             case = form.save(created_by=request.user)
 
-            # Auto-create CaseRequirement rows from category defaults
-            # One row per active requirement — all active by default
-            # Admin can toggle individual ones later from case_detail
-            requirements = Requirement.objects.filter(
-                category=case.category,
-                is_active=True
+            # Auto-create CaseRequirement rows from CategoryRequirement (Phase 1 M2M).
+            # CategoryRequirement bridges Category ↔ Requirement after Phase 1 migration.
+            # One row per active requirement — all active by default.
+            # Admin can toggle individual ones later from case_detail.
+            cat_reqs = (
+                CategoryRequirement.objects
+                .filter(category=case.category, requirement__is_active=True)
+                .select_related('requirement')
+                .order_by('order')
             )
-            for req in requirements:
+            for cr in cat_reqs:
                 CaseRequirement.objects.create(
-                    case=case,
-                    requirement=req,
-                    is_active=True,
-                    is_extra=False,  # from category defaults, not manually added
+                    case        = case,
+                    requirement = cr.requirement,
+                    is_active   = True,
+                    is_extra    = False,    # from category defaults, not manually added
                 )
 
             messages.success(
                 request,
                 f'Case created for {form.cleaned_user.email} '
-                f'— {requirements.count()} requirements loaded.'
+                f'— {cat_reqs.count()} requirements loaded.'
             )
             return redirect('admin_panel:case_detail', case_id=case.id)
     else:
@@ -551,11 +570,13 @@ def add_extra_requirement(request, case_id):
 
     case           = get_object_or_404(Case, id=case_id)
     requirement_id = request.POST.get('requirement_id')
-    requirement    = get_object_or_404(
-        Requirement,
-        id=requirement_id,
-        category=case.category  # security: must belong to same category
-    )
+    # Two-step lookup — Phase 1 removed Requirement.category FK.
+    # Step 1: confirm the requirement exists and is active (basic 404 guard).
+    requirement = get_object_or_404(Requirement, id=requirement_id, is_active=True)
+    # Step 2: security check — requirement must be linked to THIS case's category
+    # via the CategoryRequirement bridge. get_object_or_404 returns 404 if it isn't,
+    # preventing a user from injecting a requirement from a different category.
+    get_object_or_404(CategoryRequirement, requirement=requirement, category=case.category)
 
     # get_or_create — safe if row already exists (e.g., was removed before)
     case_req, created = CaseRequirement.objects.get_or_create(
@@ -710,28 +731,63 @@ def admin_create_group(request):
 def group_detail(request, group_id):
     """
     Admin views and manages a group:
-    - Members with their roles and permissions
-    - Managed profiles
-    - Option to add members, toggle active status
-    EXPAND: add case assignment directly from this page.
+    - Members with their roles, permissions, and inline cases
+    - Managed profiles with inline cases
+    - Action buttons: assign case, create managed profile, link managed to user, bulk assign
+    EXPAND: add notes or status fields per membership.
     """
-    group            = get_object_or_404(Group, id=group_id)
-    memberships      = (
+    group           = get_object_or_404(Group, id=group_id)
+    memberships     = (
         group.memberships
         .select_related('user', 'role')
         .prefetch_related('permissions')
         .order_by('-joined_at')
     )
-    managed_profiles = group.managed_profiles.select_related('created_by')
-    roles            = Role.objects.filter(group_type=group.type)
-    all_permissions  = GroupPermission.objects.all()
+    managed_profiles_qs = group.managed_profiles.select_related('created_by', 'linked_user')
+    roles           = Role.objects.filter(group_type=group.type)
+    all_permissions = GroupPermission.objects.all()
+
+    # ── Build per-member case map ─────────────────────────────
+    # One query for all member cases in this group, then group by user_id in Python.
+    # Avoids N+1 (one query per member).
+    member_case_map = {}
+    for case in (
+        Case.objects
+        .filter(group=group, managed_profile=None, is_active=True)
+        .select_related('category')
+        .order_by('-created_at')
+    ):
+        member_case_map.setdefault(case.user_id, []).append(case)
+
+    members_with_cases = [
+        (m, member_case_map.get(m.user_id, []))
+        for m in memberships
+    ]
+
+    # ── Build per-managed-profile case map ────────────────────
+    # Same strategy: one query, grouped in Python by managed_profile_id.
+    mp_case_map = {}
+    for case in (
+        Case.objects
+        .filter(managed_profile__group=group, is_active=True)
+        .select_related('category')
+        .order_by('-created_at')
+    ):
+        mp_case_map.setdefault(case.managed_profile_id, []).append(case)
+
+    managed_with_cases = [
+        (mp, mp_case_map.get(mp.id, []))
+        for mp in managed_profiles_qs
+    ]
 
     return render(request, 'admin_panel/group_detail.html', {
-        'group':            group,
-        'memberships':      memberships,
-        'managed_profiles': managed_profiles,
-        'roles':            roles,
-        'all_permissions':  all_permissions,
+        'group':               group,
+        'members_with_cases':  members_with_cases,   # list of (GroupMembership, [Case])
+        'managed_with_cases':  managed_with_cases,   # list of (ManagedProfile, [Case])
+        'roles':               roles,
+        'all_permissions':     all_permissions,
+        # legacy key kept so existing permission/role forms still work
+        'memberships':         memberships,
     })
 # ── 15++. admin_add_member ──────────────────────────────────────────
 @admin_permission_required('can_assign_members')
@@ -845,6 +901,350 @@ def admin_change_member_role(request, group_id, membership_id):
     messages.success(request, f'Role updated for {membership.user.email}.')
     return redirect('admin_panel:group_detail', group_id=group_id)
 
+
+# ── GROUP CASE HELPER ─────────────────────────────────────────
+# Called by the five views below — centralises Case + CaseRequirement
+# creation so no view can accidentally forget the requirement rows.
+#
+# WHY create CaseRequirements immediately?
+#   Each CaseRequirement row gives admin the ability to customise which
+#   requirements apply to this specific case later (is_active=False removes
+#   one; is_extra=True adds a custom one). Without them, the case detail
+#   page has nothing to show or toggle.
+#
+# EXPAND: add a 'notes' parameter for creation-time admin notes.
+
+def _create_case(user, group, category, managed_profile=None):
+    """
+    Create a Case + one CaseRequirement per active requirement in the category.
+
+    Parameters:
+        user            — always required (who is submitting/managing the case)
+        group           — the group this case belongs to
+        category        — which service category this case is for
+        managed_profile — set when the case is for an interior person; None = member case
+
+    Returns the newly created Case instance.
+    """
+    case = Case.objects.create(
+        user            = user,
+        group           = group,
+        category        = category,
+        managed_profile = managed_profile,
+        status          = 'pending',
+    )
+    # Auto-create one CaseRequirement per active CategoryRequirement in the category.
+    # Uses the Phase 1 M2M bridge (CategoryRequirement) instead of direct FK.
+    # 'order_by("order")' preserves the display order set in the builder.
+    # is_active=True  → shown by default (admin can disable per-case later)
+    # is_extra=False  → standard requirement from category defaults, not manually added
+    for cr in (
+        CategoryRequirement.objects
+        .filter(category=category, requirement__is_active=True)
+        .select_related('requirement')
+        .order_by('order')
+    ):
+        CaseRequirement.objects.create(
+            case        = case,
+            requirement = cr.requirement,
+            is_active   = True,
+            is_extra    = False,
+        )
+    return case
+
+
+# ── ADMIN: CREATE MANAGED PROFILE ────────────────────────────
+# Admin creates an interior person (no account) inside a group.
+# Requires: can_assign_members (admin manages group membership)
+#
+# URL: /admin-panel/groups/<group_id>/add-person/
+
+@admin_permission_required('can_assign_members')
+def admin_create_managed_profile(request, group_id):
+    """
+    Admin creates a ManagedProfile (interior person).
+    Default: joins the group from the URL (group_id).
+    Optional: if 'new_group_name' is filled in the form, a brand-new group is
+    created for this person exclusively — their own "file". The URL's group is
+    used only for the redirect back; the managed profile gets its own group.
+
+    created_by = admin (can be None if admin chooses to make it group-owned only,
+    but for traceability we always set it to the acting admin here).
+    """
+    group = get_object_or_404(Group, id=group_id)
+
+    if request.method == 'POST':
+        form = AdminManagedProfileForm(request.POST, request.FILES)
+        if form.is_valid():
+            managed            = form.save(commit=False)
+            managed.created_by = request.user   # admin is the creator
+
+            new_group_name = form.cleaned_data.get('new_group_name', '').strip()
+            if new_group_name:
+                # Create a new group exclusively for this interior person.
+                # Type 'other' is the correct valid fallback (matches Group.GROUP_TYPES choices).
+                # EXPAND: expose a type dropdown if admins need family/business/etc.
+                new_group = Group.objects.create(
+                    name       = new_group_name,
+                    type       = 'other',
+                    created_by = request.user,
+                )
+                managed.group = new_group
+            else:
+                # Default: add to the existing group from the URL
+                managed.group = group
+
+            managed.save()
+            messages.success(request, f'Profile for {managed.full_name()} created.')
+            return redirect('admin_panel:group_detail', group_id=group_id)
+    else:
+        form = AdminManagedProfileForm()
+
+    return render(request, 'admin_panel/managed_profile_form.html', {
+        'form':  form,
+        'group': group,
+    })
+
+
+# ── ADMIN: ASSIGN CASE TO MEMBER ─────────────────────────────
+# Admin creates a new Case for a specific real-user group member.
+# Requires: can_assign_members or can_view_all_cases
+#
+# URL: /admin-panel/groups/<group_id>/member/<membership_id>/assign-case/
+
+@admin_permission_required('can_assign_members')
+def admin_assign_case_to_member(request, group_id, membership_id):
+    """
+    Admin picks a category to create a Case for a real group member.
+    The case is owned by the member's User account (case.user = member.user).
+    EXPAND: add a 'notes' field so admin can attach context at creation time.
+    """
+    group = get_object_or_404(Group, id=group_id)
+    # membership must belong to this group — prevents cross-group ID guessing
+    target = get_object_or_404(GroupMembership, id=membership_id, group=group, is_active=True)
+
+    if request.method == 'POST':
+        form = AdminAssignCaseForm(request.POST)
+        if form.is_valid():
+            category = form.cleaned_data['category']
+            _create_case(user=target.user, group=group, category=category)
+            messages.success(
+                request,
+                f'Case "{category.name}" assigned to {target.user.email}.'
+            )
+            return redirect('admin_panel:group_detail', group_id=group_id)
+    else:
+        form = AdminAssignCaseForm()
+
+    return render(request, 'admin_panel/assign_case.html', {
+        'form':         form,
+        'group':        group,
+        'target_label': target.user.email,
+        'target_type':  'member',
+    })
+
+
+# ── ADMIN: CREATE CASE FOR MANAGED PROFILE ────────────────────
+# Admin creates a Case for a managed profile (interior person, no account).
+# Requires: can_assign_members
+#
+# URL: /admin-panel/groups/<group_id>/managed/<managed_id>/assign-case/
+
+@admin_permission_required('can_assign_members')
+def admin_create_case_for_managed(request, group_id, managed_id):
+    """
+    Admin picks a category to create a Case for a managed profile.
+    case.user = request.user (admin manages on behalf of the profile).
+    case.managed_profile = the interior person.
+    EXPAND: add a 'notes' field for creation-time context.
+    """
+    group   = get_object_or_404(Group, id=group_id)
+    managed = get_object_or_404(ManagedProfile, id=managed_id, group=group)
+
+    if request.method == 'POST':
+        form = AdminAssignCaseForm(request.POST)
+        if form.is_valid():
+            category = form.cleaned_data['category']
+            _create_case(
+                user            = request.user,   # admin acts on behalf of managed profile
+                group           = group,
+                category        = category,
+                managed_profile = managed,
+            )
+            messages.success(
+                request,
+                f'Case "{category.name}" assigned to {managed.full_name()}.'
+            )
+            return redirect('admin_panel:group_detail', group_id=group_id)
+    else:
+        form = AdminAssignCaseForm()
+
+    return render(request, 'admin_panel/assign_case.html', {
+        'form':         form,
+        'group':        group,
+        'target_label': managed.full_name(),
+        'target_type':  'managed',
+    })
+
+
+# ── ADMIN: LINK MANAGED PROFILE TO USER ACCOUNT ───────────────
+# Admin links a ManagedProfile to an existing User account.
+# Used when an interior person later creates their own login.
+# Requires: can_assign_members (sensitive identity-linking operation)
+#
+# URL: /admin-panel/groups/<group_id>/managed/<managed_id>/link-user/
+
+@admin_permission_required('can_assign_members')
+def admin_link_managed_to_user(request, group_id, managed_id):
+    """
+    Sets managed_profile.linked_user to an existing User account.
+    After linking:
+      managed.linked_user     → the User
+      user.managed_account    → the ManagedProfile (reverse OneToOne)
+    Guard: redirect with error if already linked (no confusing re-link form).
+    EXPAND: add an audit log entry when a link is created.
+    """
+    group   = get_object_or_404(Group, id=group_id)
+    managed = get_object_or_404(ManagedProfile, id=managed_id, group=group)
+
+    if managed.linked_user is not None:
+        messages.error(
+            request,
+            f'{managed.full_name()} is already linked to {managed.linked_user.email}.'
+        )
+        return redirect('admin_panel:group_detail', group_id=group_id)
+
+    if request.method == 'POST':
+        form = AdminLinkManagedForm(request.POST)
+        if form.is_valid():
+            managed.linked_user = form.cleaned_user
+            managed.save()
+            messages.success(
+                request,
+                f'{managed.full_name()} is now linked to {form.cleaned_user.email}.'
+            )
+            return redirect('admin_panel:group_detail', group_id=group_id)
+    else:
+        form = AdminLinkManagedForm()
+
+    return render(request, 'admin_panel/link_managed_user.html', {
+        'form':    form,
+        'group':   group,
+        'managed': managed,
+    })
+
+
+# ── ADMIN: MANAGED PROFILE DETAIL ────────────────────────────
+# Read-only summary of an interior person: personal info + all their cases.
+# Links to "Assign Case", "Link Account", and back to the group detail page.
+# Requires: can_assign_members (same as other managed-profile operations)
+#
+# URL: /admin-panel/groups/<group_id>/managed/<managed_id>/
+
+@admin_permission_required('can_assign_members')
+def admin_managed_profile_detail(request, group_id, managed_id):
+    """
+    Shows all information for a single managed profile (interior person):
+      - personal info (name, DOB, gender, origin, passport, photos)
+      - which group they belong to and who created them
+      - all their cases with status badges and View links
+      - action buttons: Assign Case, Link Account
+
+    Context variables:
+      group   — the Group this managed profile belongs to
+      managed — the ManagedProfile object
+      cases   — all active Cases for this managed profile
+    """
+    group   = get_object_or_404(Group, id=group_id)
+    managed = get_object_or_404(ManagedProfile, id=managed_id, group=group)
+
+    # Fetch all active cases for this interior person.
+    # select_related on category avoids an extra query per case row.
+    cases = (
+        Case.objects
+        .filter(managed_profile=managed, is_active=True)
+        .select_related('category')
+        .order_by('-created_at')  # most recent first
+    )
+
+    return render(request, 'admin_panel/managed_profile_detail.html', {
+        'group':   group,
+        'managed': managed,
+        'cases':   cases,
+    })
+
+
+# ── ADMIN: BULK ASSIGN CATEGORY TO WHOLE GROUP ────────────────
+# Creates one Case per active member AND one Case per managed profile,
+# all with the same selected category. Skips anyone who already has
+# an active case with this category in this group (no duplicates).
+# Requires: can_assign_members
+#
+# URL: /admin-panel/groups/<group_id>/assign-category/
+
+@admin_permission_required('can_assign_members')
+def admin_assign_category_to_group(request, group_id):
+    """
+    Admin selects one category → one Case is created for every active member
+    AND every managed profile in the group.
+
+    WHY skip duplicates?
+      Prevents accidentally creating a second case if admin runs this twice.
+      A clear created/skipped summary is shown so admin knows what happened.
+
+    EXPAND: add a 'notes' field applied to all created cases.
+    """
+    group         = get_object_or_404(Group, id=group_id)
+    member_count  = group.memberships.filter(is_active=True).count()
+    managed_count = group.managed_profiles.count()
+
+    if request.method == 'POST':
+        form = AdminAssignCaseForm(request.POST)
+        if form.is_valid():
+            category      = form.cleaned_data['category']
+            created_count = 0
+            skipped_count = 0
+
+            # ── One case per active member ─────────────────────
+            for m in group.memberships.filter(is_active=True).select_related('user'):
+                already = Case.objects.filter(
+                    user=m.user, group=group, category=category,
+                    managed_profile=None, is_active=True,
+                ).exists()
+                if already:
+                    skipped_count += 1
+                else:
+                    _create_case(user=m.user, group=group, category=category)
+                    created_count += 1
+
+            # ── One case per managed profile ───────────────────
+            for mp in group.managed_profiles.all():
+                already = Case.objects.filter(
+                    managed_profile=mp, category=category, is_active=True,
+                ).exists()
+                if already:
+                    skipped_count += 1
+                else:
+                    _create_case(
+                        user=request.user, group=group,
+                        category=category, managed_profile=mp,
+                    )
+                    created_count += 1
+
+            parts = [f'Created {created_count} case(s) for "{category.name}".']
+            if skipped_count:
+                parts.append(f'{skipped_count} already had this category — skipped.')
+            messages.success(request, ' '.join(parts))
+            return redirect('admin_panel:group_detail', group_id=group_id)
+    else:
+        form = AdminAssignCaseForm()
+
+    return render(request, 'admin_panel/assign_category_group.html', {
+        'form':          form,
+        'group':         group,
+        'member_count':  member_count,
+        'managed_count': managed_count,
+    })
 
 
 # ── 16. AJAX — GET CATEGORIES ─────────────────────────────────
@@ -1032,7 +1432,12 @@ def ajax_get_categories(request):
             'is_active':    c.is_active,
             'service_id':   c.service_id,
             'parent_id':    c.parent_id,
-            'req_count':    c.requirements.filter(is_active=True).count(),
+            # Count via CategoryRequirement bridge — Requirement.category FK was removed in Phase 1.
+            # CategoryRequirement is the M2M through-table linking categories to their requirements.
+            'req_count':    CategoryRequirement.objects.filter(
+                                category=c,
+                                requirement__is_active=True
+                            ).count(),
             'has_children': c.subcategories.exists(),
         }
         for c in cats
@@ -1123,22 +1528,58 @@ def ajax_get_category_detail(request, category_id):
     """
     category = get_object_or_404(Category, id=category_id)
 
-    # Own requirements
-    own_reqs = list(
-        category.requirements
-        .filter(is_active=True)
-        .order_by('name')
-        .values('id', 'name', 'type', 'description', 'is_required', 'is_active')
+    # ── Own requirements (via CategoryRequirement M2M) ─────────────────
+    # Phase 1: requirements are no longer stored directly on the category.
+    # They are linked via CategoryRequirement rows, ordered by 'order' field.
+    # 'is_required_effective' respects per-category override if set.
+    own_cat_reqs = (
+        CategoryRequirement.objects
+        .filter(category=category, requirement__is_active=True)
+        .select_related('requirement', 'requirement__section')
+        .order_by('order')
     )
+    own_reqs = []
+    for cr in own_cat_reqs:
+        req = cr.requirement
+        own_reqs.append({
+            'id':               req.id,
+            'name':             req.name,
+            'type':             req.type,
+            'description':      req.description or '',
+            'is_required':      cr.effective_is_required(),   # respects override
+            'is_active':        req.is_active,
+            'profile_mapping':           req.profile_mapping or '',
+            'managed_profile_mapping':   req.managed_profile_mapping or '',   # Phase 3
+            'form_field_id':             req.form_field_id or '',
+            # Phase 4: eligibility check fields — shown in the edit panel eligibility section
+            'is_eligibility':            req.is_eligibility,
+            'eligibility_operator':      req.eligibility_operator or '',
+            'eligibility_value':         req.eligibility_value or '',
+            'eligibility_fail_message':  req.eligibility_fail_message or '',
+            # section_id — numeric PK used by the edit panel to pre-select the section dropdown.
+            # section_name — human label shown as a badge in the requirement row.
+            'section_id':       req.section_id,
+            'section_name':     req.section.name if req.section else 'Uncategorized',
+            'cr_id':            cr.id,        # CategoryRequirement id for remove/reorder calls
+            'cr_order':         cr.order,
+        })
 
-    # Inherited — walk up parent chain
+    # ── Inherited — walk up parent chain ──────────────────────────────
+    # A category inherits all requirements from its parent categories.
+    # 'seen_ids' prevents the same requirement appearing twice (own overrides parent).
     inherited = []
     seen_ids  = {r['id'] for r in own_reqs}
     current   = category.parent
 
     while current:
-        parent_reqs = current.requirements.filter(is_active=True).order_by('name')
-        for req in parent_reqs:
+        parent_cat_reqs = (
+            CategoryRequirement.objects
+            .filter(category=current, requirement__is_active=True)
+            .select_related('requirement')
+            .order_by('order')
+        )
+        for cr in parent_cat_reqs:
+            req = cr.requirement
             if req.id not in seen_ids:
                 seen_ids.add(req.id)
                 inherited.append({
@@ -1147,12 +1588,12 @@ def ajax_get_category_detail(request, category_id):
                         'name':        req.name,
                         'type':        req.type,
                         'description': req.description or '',
-                        'is_required': req.is_required,
+                        'is_required': cr.effective_is_required(),
                     },
                     'from_category': {
                         'id':   current.id,
                         'name': current.name,
-                    }
+                    },
                 })
         current = current.parent
 
@@ -1175,9 +1616,21 @@ def ajax_get_category_detail(request, category_id):
 @require_http_methods(['POST'])
 def ajax_create_requirement(request):
     """
-    POST /ajax/builder/requirement/create/
-    Body: { name, type, description, is_required, category_id }
-    Response: { ok: true, requirement: {...} }
+    POST /ajax/builder/library/create/
+    (Old URL /ajax/builder/requirement/create/ also maps here for backwards compat.)
+
+    Creates a new Requirement in the library, then optionally links it to a category.
+
+    Body: {
+        name,
+        type,
+        description,
+        is_required,
+        section_id       (optional — assigns to a library section)
+        category_id      (optional — if provided, also creates a CategoryRequirement row)
+        profile_mapping  (optional — dot-path for Phase 2 auto-fill, e.g. "profile.first_name")
+    }
+    Response: { ok: true, requirement: {...}, cr_id: <CategoryRequirement id or null> }
               { ok: false, errors: {...} }
     """
     try:
@@ -1185,13 +1638,15 @@ def ajax_create_requirement(request):
     except json.JSONDecodeError:
         return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
 
-    name        = body.get('name', '').strip()
-    req_type    = body.get('type', '').strip()
-    description = body.get('description', '').strip()
-    is_required = body.get('is_required', True)
-    category_id = body.get('category_id')
+    name            = body.get('name', '').strip()
+    req_type        = body.get('type', '').strip()
+    description     = body.get('description', '').strip()
+    is_required     = body.get('is_required', True)
+    section_id      = body.get('section_id')
+    category_id     = body.get('category_id')
+    profile_mapping = body.get('profile_mapping', '').strip()
 
-    # Validate
+    # ── Validate ──────────────────────────────────────────────────────
     errors      = {}
     valid_types = [t[0] for t in Requirement.TYPE_CHOICES]
 
@@ -1201,31 +1656,66 @@ def ajax_create_requirement(request):
         errors['type'] = ['Type is required.']
     elif req_type not in valid_types:
         errors['type'] = [f'Invalid type. Choose from: {", ".join(valid_types)}']
-    if not category_id:
-        errors['category_id'] = ['Category is required.']
 
     if errors:
         return JsonResponse({'ok': False, 'errors': errors})
 
-    category = get_object_or_404(Category, id=category_id)
-    req      = Requirement.objects.create(
-        name        = name,
-        type        = req_type,
-        description = description,
-        is_required = bool(is_required),
-        category    = category,
+    # ── Resolve optional FK targets ───────────────────────────────────
+    section  = None
+    category = None
+
+    if section_id:
+        try:
+            section = RequirementSection.objects.get(id=section_id, is_active=True)
+        except RequirementSection.DoesNotExist:
+            return JsonResponse({'ok': False, 'errors': {'section_id': ['Section not found.']}})
+
+    if category_id:
+        try:
+            category = Category.objects.get(id=category_id, is_active=True)
+        except Category.DoesNotExist:
+            return JsonResponse({'ok': False, 'errors': {'category_id': ['Category not found.']}})
+
+    # ── Create the library Requirement ────────────────────────────────
+    req = Requirement.objects.create(
+        name            = name,
+        type            = req_type,
+        description     = description,
+        is_required     = bool(is_required),
+        section         = section,
+        profile_mapping = profile_mapping or None,
     )
 
+    # ── Optionally link to a category (creates CategoryRequirement) ───
+    cr_id = None
+    if category:
+        # Determine the next order value so this requirement goes at the end of the list
+        max_order = (
+            CategoryRequirement.objects
+            .filter(category=category)
+            .aggregate(m=Max('order'))
+            ['m'] or 0
+        )
+        cr = CategoryRequirement.objects.create(
+            category    = category,
+            requirement = req,
+            order       = max_order + 1,
+        )
+        cr_id = cr.id
+
     return JsonResponse({
-        'ok':          True,
+        'ok': True,
         'requirement': {
-            'id':          req.id,
-            'name':        req.name,
-            'type':        req.type,
-            'description': req.description or '',
-            'is_required': req.is_required,
-            'is_active':   req.is_active,
-        }
+            'id':              req.id,
+            'name':            req.name,
+            'type':            req.type,
+            'description':     req.description or '',
+            'is_required':     req.is_required,
+            'is_active':       req.is_active,
+            'profile_mapping': req.profile_mapping or '',
+            'section_name':    req.section.name if req.section else 'Uncategorized',
+        },
+        'cr_id': cr_id,     # CategoryRequirement id if linked to a category; null otherwise
     })
 
 
@@ -1236,13 +1726,19 @@ def ajax_create_requirement(request):
 def ajax_edit_requirement(request, requirement_id):
     """
     POST /ajax/builder/requirement/<id>/edit/
-    Body: { name, type, description, is_required, is_active }
+    Body: { name, type, description, is_required, is_active, profile_mapping,
+            form_field_id, section_id }
     Response: { ok: true, requirement: {...} }
               { ok: false, errors: {...} }
 
     Why POST not PATCH?
       Django's CSRF middleware works cleanly with POST.
       PATCH requires extra setup for form data — POST keeps it simple.
+
+    section_id behaviour:
+      - Key absent from body → section unchanged (backward-compatible with old callers)
+      - Key present, null/empty → section cleared (requirement becomes Uncategorized)
+      - Key present, numeric ID → requirement moved to that section
     """
     req = get_object_or_404(Requirement, id=requirement_id)
 
@@ -1251,11 +1747,21 @@ def ajax_edit_requirement(request, requirement_id):
     except json.JSONDecodeError:
         return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
 
-    name        = body.get('name', req.name).strip()
-    req_type    = body.get('type', req.type).strip()
-    description = body.get('description', req.description or '').strip()
-    is_required = body.get('is_required', req.is_required)
-    is_active   = body.get('is_active',   req.is_active)
+    name            = body.get('name',            req.name).strip()
+    req_type        = body.get('type',            req.type).strip()
+    description     = body.get('description',     req.description or '').strip()
+    is_required     = body.get('is_required',     req.is_required)
+    is_active       = body.get('is_active',       req.is_active)
+    profile_mapping          = body.get('profile_mapping',         req.profile_mapping or '').strip()
+    # Phase 3: dot-path into ManagedProfile for auto-fill when filling on behalf of interior person
+    managed_profile_mapping  = body.get('managed_profile_mapping', req.managed_profile_mapping or '').strip()
+    # Government form field identifier — kept for backwards compatibility.
+    form_field_id            = body.get('form_field_id',            req.form_field_id or '').strip()
+    # Phase 4: eligibility check fields
+    is_eligibility           = bool(body.get('is_eligibility',       req.is_eligibility))
+    eligibility_operator     = body.get('eligibility_operator',      req.eligibility_operator or '').strip()
+    eligibility_value        = body.get('eligibility_value',         req.eligibility_value or '').strip()
+    eligibility_fail_message = body.get('eligibility_fail_message',  req.eligibility_fail_message or '').strip()
 
     errors      = {}
     valid_types = [t[0] for t in Requirement.TYPE_CHOICES]
@@ -1265,25 +1771,61 @@ def ajax_edit_requirement(request, requirement_id):
     if req_type not in valid_types:
         errors['type'] = [f'Invalid type.']
 
+    # ── Section reassignment ──────────────────────────────────────────────
+    # Only update section if 'section_id' key was explicitly included in the body.
+    # This preserves backward compatibility: old JS callers that don't send section_id
+    # will not accidentally clear the section.
+    new_section = req.section  # default: keep current section
+    if 'section_id' in body:
+        raw_section_id = body.get('section_id')
+        if raw_section_id:
+            # Numeric ID → look up the section
+            try:
+                new_section = RequirementSection.objects.get(id=raw_section_id, is_active=True)
+            except RequirementSection.DoesNotExist:
+                errors['section_id'] = ['Section not found.']
+        else:
+            # null / empty string → unassign (Uncategorized)
+            new_section = None
+
     if errors:
         return JsonResponse({'ok': False, 'errors': errors})
 
-    req.name        = name
-    req.type        = req_type
-    req.description = description
-    req.is_required = bool(is_required)
-    req.is_active   = bool(is_active)
+    req.name            = name
+    req.type            = req_type
+    req.description     = description
+    req.is_required     = bool(is_required)
+    req.is_active       = bool(is_active)
+    req.profile_mapping         = profile_mapping         or None
+    req.managed_profile_mapping = managed_profile_mapping or None   # Phase 3
+    req.form_field_id           = form_field_id           or None
+    req.section                 = new_section
+    # Phase 4: eligibility fields
+    req.is_eligibility           = is_eligibility
+    req.eligibility_operator     = eligibility_operator     or None
+    req.eligibility_value        = eligibility_value        or None
+    req.eligibility_fail_message = eligibility_fail_message or None
     req.save()
 
     return JsonResponse({
         'ok':          True,
         'requirement': {
-            'id':          req.id,
-            'name':        req.name,
-            'type':        req.type,
-            'description': req.description or '',
-            'is_required': req.is_required,
-            'is_active':   req.is_active,
+            'id':                       req.id,
+            'name':                     req.name,
+            'type':                     req.type,
+            'description':              req.description or '',
+            'is_required':              req.is_required,
+            'is_active':                req.is_active,
+            'profile_mapping':          req.profile_mapping or '',
+            'managed_profile_mapping':  req.managed_profile_mapping or '',
+            'form_field_id':            req.form_field_id or '',
+            # Phase 4: eligibility fields returned so the UI can update the badge immediately
+            'is_eligibility':           req.is_eligibility,
+            'eligibility_operator':     req.eligibility_operator or '',
+            'eligibility_value':        req.eligibility_value or '',
+            'eligibility_fail_message': req.eligibility_fail_message or '',
+            'section_id':               req.section_id,
+            'section_name':             req.section.name if req.section else 'Uncategorized',
         }
     })
 
@@ -1365,8 +1907,21 @@ def ajax_delete_category(request, category_id):
     # Soft delete direct children
     Category.objects.filter(parent=category).update(is_active=False)
 
-    # Soft delete requirements on this category
-    Requirement.objects.filter(category=category).update(is_active=False)
+    # Soft delete requirements attached to this category via CategoryRequirement.
+    # We soft-delete the Requirement library items themselves only if they are
+    # EXCLUSIVELY used by this category (no other CategoryRequirement rows).
+    # Requirements shared with other categories are left active — only their
+    # CategoryRequirement link is removed (hard delete of the bridge row).
+    cat_req_ids = CategoryRequirement.objects.filter(category=category).values_list('requirement_id', flat=True)
+    for req_id in cat_req_ids:
+        other_uses = CategoryRequirement.objects.filter(requirement_id=req_id).exclude(category=category).exists()
+        if not other_uses:
+            # Only used by this category → soft delete the library item
+            Requirement.objects.filter(id=req_id).update(is_active=False)
+        # else: shared with other categories → leave active, just remove the bridge row below
+
+    # Remove the CategoryRequirement bridge rows for this category
+    CategoryRequirement.objects.filter(category=category).delete()
 
     return JsonResponse({'ok': True})
 
@@ -1384,6 +1939,1007 @@ def ajax_delete_requirement(request, requirement_id):
     req.is_active = False
     req.save()
     return JsonResponse({'ok': True})
+
+
+# ══════════════════════════════════════════════════════════════
+# PHASE 1 — REQUIREMENT LIBRARY AJAX VIEWS
+#
+# These views power the "Library" panel in the service builder.
+# They manage sections (question banks), the library of reusable
+# requirements, per-category requirement links, and choice options.
+#
+# All views:
+#   - require @admin_required
+#   - return JsonResponse({'ok': True, ...}) on success
+#   - return JsonResponse({'ok': False, 'errors': {...}}) on failure
+#
+# URL patterns are in admin_panel/urls.py under the /ajax/builder/ prefix.
+# ══════════════════════════════════════════════════════════════
+
+
+# ── 1. GET SECTIONS ───────────────────────────────────────────
+# Returns all active sections with a requirement count each.
+# Used by the library browser to show the section sidebar.
+
+@admin_required
+def ajax_get_sections(request):
+    """
+    GET /ajax/builder/sections/
+    Response: { sections: [{id, name, description, order, req_count}] }
+    """
+    sections = RequirementSection.objects.filter(is_active=True).order_by('order', 'name')
+    data = []
+    for s in sections:
+        data.append({
+            'id':          s.id,
+            'name':        s.name,
+            'slug':        s.slug,
+            'description': s.description or '',
+            'order':       s.order,
+            # Count active requirements in this section
+            'req_count':   s.requirements.filter(is_active=True).count(),
+        })
+    return JsonResponse({'sections': data})
+
+
+# ── 2. CREATE SECTION ─────────────────────────────────────────
+# Admin creates a new named question bank.
+# EXPAND: add 'icon' field to body once RequirementSection has one.
+
+@admin_required
+@require_http_methods(['POST'])
+def ajax_create_section(request):
+    """
+    POST /ajax/builder/section/create/
+    Body: { name, description (optional) }
+    Response: { ok: true, section: {...} }
+    """
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
+
+    name        = body.get('name', '').strip()
+    description = body.get('description', '').strip()
+
+    if not name:
+        return JsonResponse({'ok': False, 'errors': {'name': ['Name is required.']}})
+
+    if RequirementSection.objects.filter(name__iexact=name).exists():
+        return JsonResponse({'ok': False, 'errors': {'name': ['A section with this name already exists.']}})
+
+    # Place at the end of the current order
+    max_order = RequirementSection.objects.aggregate(m=Max('order'))['m'] or 0
+    section   = RequirementSection.objects.create(
+        name        = name,
+        description = description or None,
+        order       = max_order + 1,
+    )
+    return JsonResponse({
+        'ok': True,
+        'section': {
+            'id':          section.id,
+            'name':        section.name,
+            'slug':        section.slug,
+            'description': section.description or '',
+            'order':       section.order,
+            'req_count':   0,
+        },
+    })
+
+
+# ── 3. EDIT SECTION ───────────────────────────────────────────
+# Admin renames or reorders a section.
+
+@admin_required
+@require_http_methods(['POST'])
+def ajax_edit_section(request, section_id):
+    """
+    POST /ajax/builder/section/<id>/edit/
+    Body: { name (optional), description (optional), order (optional) }
+    Response: { ok: true, section: {...} }
+    """
+    section = get_object_or_404(RequirementSection, id=section_id)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
+
+    name        = body.get('name', section.name).strip()
+    description = body.get('description', section.description or '').strip()
+    order       = body.get('order', section.order)
+
+    if not name:
+        return JsonResponse({'ok': False, 'errors': {'name': ['Name is required.']}})
+
+    # Check uniqueness (exclude self)
+    if RequirementSection.objects.filter(name__iexact=name).exclude(id=section_id).exists():
+        return JsonResponse({'ok': False, 'errors': {'name': ['A section with this name already exists.']}})
+
+    section.name        = name
+    section.description = description or None
+    section.order       = int(order)
+    section.save()
+
+    return JsonResponse({
+        'ok': True,
+        'section': {
+            'id':          section.id,
+            'name':        section.name,
+            'description': section.description or '',
+            'order':       section.order,
+        },
+    })
+
+
+# ── 4. GET LIBRARY ────────────────────────────────────────────
+# Browse the full requirement library, optionally filtered by section.
+# Used by the "Add from Library" tab in the builder.
+
+@admin_required
+def ajax_get_library(request):
+    """
+    GET /ajax/builder/library/
+    Query params: ?section_id=5 (optional), ?q=date (optional text search)
+    Response: { requirements: [{id, name, type, description, is_required, section_name, profile_mapping}] }
+    """
+    qs = Requirement.objects.filter(is_active=True).select_related('section').order_by('name')
+
+    section_id = request.GET.get('section_id')
+    if section_id:
+        qs = qs.filter(section_id=section_id)
+
+    search = request.GET.get('q', '').strip()
+    if search:
+        # Filter by name containing the search term (case-insensitive)
+        qs = qs.filter(name__icontains=search)
+
+    data = []
+    for req in qs:
+        data.append({
+            'id':              req.id,
+            'name':            req.name,
+            'type':            req.type,
+            'description':              req.description or '',
+            'is_required':              req.is_required,
+            'profile_mapping':          req.profile_mapping or '',
+            'managed_profile_mapping':  req.managed_profile_mapping or '',   # Phase 3
+            'form_field_id':            req.form_field_id or '',
+            # Phase 4: eligibility fields — shown as ⚑ badge in library results
+            'is_eligibility':           req.is_eligibility,
+            'eligibility_operator':     req.eligibility_operator or '',
+            'eligibility_value':        req.eligibility_value or '',
+            'eligibility_fail_message': req.eligibility_fail_message or '',
+            'section_name':             req.section.name if req.section else 'Uncategorized',
+            'section_id':               req.section_id,
+        })
+    return JsonResponse({'requirements': data})
+
+
+# ── 5. ADD EXISTING REQUIREMENT TO CATEGORY ───────────────────
+# Links an existing library requirement to a category.
+# Creates one CategoryRequirement row. Does NOT duplicate the requirement.
+
+@admin_required
+@require_http_methods(['POST'])
+def ajax_add_to_category(request, category_id):
+    """
+    POST /ajax/builder/category/<id>/add-req/
+    Body: { requirement_id }
+    Response: { ok: true, cr: {id, order, is_required_effective} }
+    """
+    category = get_object_or_404(Category, id=category_id, is_active=True)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
+
+    req_id = body.get('requirement_id')
+    if not req_id:
+        return JsonResponse({'ok': False, 'errors': {'requirement_id': ['Required.']}})
+
+    req = get_object_or_404(Requirement, id=req_id, is_active=True)
+
+    # Check if already linked
+    if CategoryRequirement.objects.filter(category=category, requirement=req).exists():
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['This requirement is already in this category.']}})
+
+    max_order = (
+        CategoryRequirement.objects
+        .filter(category=category)
+        .aggregate(m=Max('order'))['m'] or 0
+    )
+    cr = CategoryRequirement.objects.create(
+        category    = category,
+        requirement = req,
+        order       = max_order + 1,
+    )
+
+    return JsonResponse({
+        'ok': True,
+        'cr': {
+            'id':                   cr.id,
+            'order':                cr.order,
+            'is_required_override': cr.is_required_override,
+            'is_required_effective': cr.effective_is_required(),
+            'requirement': {
+                'id':              req.id,
+                'name':            req.name,
+                'type':            req.type,
+                'description':     req.description or '',
+                'profile_mapping': req.profile_mapping or '',
+                'section_name':    req.section.name if req.section else 'Uncategorized',
+            },
+        },
+    })
+
+
+# ── 6. BULK-ADD A SECTION TO A CATEGORY ──────────────────────
+# Adds ALL active requirements from a section to a category at once.
+# Already-linked requirements are skipped (no duplicates).
+# This is the "bulk import" action in the builder.
+
+@admin_required
+@require_http_methods(['POST'])
+def ajax_add_section_to_category(request, category_id):
+    """
+    POST /ajax/builder/category/<id>/add-section/
+    Body: { section_id }
+    Response: { ok: true, added: <count>, skipped: <count> }
+    """
+    category = get_object_or_404(Category, id=category_id, is_active=True)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
+
+    section_id = body.get('section_id')
+    if not section_id:
+        return JsonResponse({'ok': False, 'errors': {'section_id': ['Required.']}})
+
+    section = get_object_or_404(RequirementSection, id=section_id, is_active=True)
+
+    # Get all active requirements in this section
+    reqs = Requirement.objects.filter(section=section, is_active=True)
+
+    # Get already-linked requirement IDs for this category
+    existing_ids = set(
+        CategoryRequirement.objects
+        .filter(category=category)
+        .values_list('requirement_id', flat=True)
+    )
+
+    max_order = (
+        CategoryRequirement.objects
+        .filter(category=category)
+        .aggregate(m=Max('order'))['m'] or 0
+    )
+
+    added   = 0
+    skipped = 0
+    for req in reqs:
+        if req.id in existing_ids:
+            skipped += 1
+            continue
+        max_order += 1
+        CategoryRequirement.objects.create(
+            category  = category,
+            requirement = req,
+            order     = max_order,
+        )
+        added += 1
+
+    return JsonResponse({'ok': True, 'added': added, 'skipped': skipped})
+
+
+# ── 7. REMOVE REQUIREMENT FROM CATEGORY ──────────────────────
+# Removes the CategoryRequirement bridge row (does NOT delete the library item).
+# The requirement stays in the library and can be re-added or used elsewhere.
+
+@admin_required
+@require_http_methods(['POST'])
+def ajax_remove_from_category(request, category_id, cr_id):
+    """
+    POST /ajax/builder/category/<id>/req/<cr_id>/remove/
+    Response: { ok: true }
+    """
+    # Verify the CategoryRequirement belongs to this category (security: prevent cross-category removal)
+    cr = get_object_or_404(CategoryRequirement, id=cr_id, category_id=category_id)
+    cr.delete()
+    # Hard delete of the bridge row — the Requirement library item is untouched.
+    return JsonResponse({'ok': True})
+
+
+# ── 8. REORDER REQUIREMENTS WITHIN A CATEGORY ────────────────
+# Updates the 'order' field on CategoryRequirement rows after drag-and-drop.
+# The builder sends the new order as a list of CategoryRequirement IDs.
+
+@admin_required
+@require_http_methods(['POST'])
+def ajax_reorder_category_req(request, category_id):
+    """
+    POST /ajax/builder/category/<id>/reorder/
+    Body: { ordered_ids: [cr_id_1, cr_id_2, cr_id_3, ...] }
+    The IDs must all belong to this category (verified in the query).
+    Response: { ok: true }
+    """
+    category = get_object_or_404(Category, id=category_id)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
+
+    ordered_ids = body.get('ordered_ids', [])
+    if not isinstance(ordered_ids, list):
+        return JsonResponse({'ok': False, 'errors': {'ordered_ids': ['Must be a list.']}})
+
+    # Update each CategoryRequirement's order based on its position in the list.
+    # enumerate starts at 1 so order values are 1-based (cleaner than 0-based).
+    for position, cr_id in enumerate(ordered_ids, start=1):
+        CategoryRequirement.objects.filter(
+            id          = cr_id,
+            category    = category,   # safety: only update rows belonging to this category
+        ).update(order=position)
+
+    return JsonResponse({'ok': True})
+
+
+# ── 9. GET CHOICES FOR A SELECT REQUIREMENT ───────────────────
+# Returns the dropdown options for a 'select'-type requirement.
+
+@admin_required
+def ajax_get_choices(request, requirement_id):
+    """
+    GET /ajax/builder/requirement/<id>/choices/
+    Response: { choices: [{id, label, value, order}] }
+    """
+    req     = get_object_or_404(Requirement, id=requirement_id)
+    choices = req.choices.order_by('order', 'label')
+    data    = [
+        {'id': c.id, 'label': c.label, 'value': c.value, 'order': c.order}
+        for c in choices
+    ]
+    return JsonResponse({'choices': data})
+
+
+# ── 10. CREATE CHOICE ─────────────────────────────────────────
+# Adds one option to a 'select'-type requirement.
+
+@admin_required
+@require_http_methods(['POST'])
+def ajax_create_choice(request, requirement_id):
+    """
+    POST /ajax/builder/requirement/<id>/choices/create/
+    Body: { label, value (optional — defaults to label), order (optional) }
+    Response: { ok: true, choice: {id, label, value, order} }
+    """
+    req = get_object_or_404(Requirement, id=requirement_id)
+
+    if req.type != 'select':
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Only select-type requirements can have choices.']}})
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
+
+    label = body.get('label', '').strip()
+    value = body.get('value', '').strip() or label   # default value = label if not provided
+    order = body.get('order')
+
+    if not label:
+        return JsonResponse({'ok': False, 'errors': {'label': ['Label is required.']}})
+
+    if order is None:
+        # Place at the end
+        order = (req.choices.aggregate(m=Max('order'))['m'] or 0) + 1
+
+    choice = RequirementChoice.objects.create(
+        requirement = req,
+        label       = label,
+        value       = value,
+        order       = int(order),
+    )
+    return JsonResponse({
+        'ok': True,
+        'choice': {'id': choice.id, 'label': choice.label, 'value': choice.value, 'order': choice.order},
+    })
+
+
+# ── 11. EDIT CHOICE ───────────────────────────────────────────
+# Update label, value, or order of an existing dropdown option.
+
+@admin_required
+@require_http_methods(['POST'])
+def ajax_edit_choice(request, choice_id):
+    """
+    POST /ajax/builder/choice/<id>/edit/
+    Body: { label (optional), value (optional), order (optional) }
+    Response: { ok: true, choice: {id, label, value, order} }
+    """
+    choice = get_object_or_404(RequirementChoice, id=choice_id)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
+
+    label = body.get('label', choice.label).strip()
+    value = body.get('value', choice.value).strip()
+    order = body.get('order', choice.order)
+
+    if not label:
+        return JsonResponse({'ok': False, 'errors': {'label': ['Label is required.']}})
+
+    choice.label = label
+    choice.value = value or label   # fall back to label if value cleared
+    choice.order = int(order)
+    choice.save()
+
+    return JsonResponse({
+        'ok': True,
+        'choice': {'id': choice.id, 'label': choice.label, 'value': choice.value, 'order': choice.order},
+    })
+
+
+# ── 12. DELETE CHOICE ─────────────────────────────────────────
+# Hard-deletes a dropdown option.
+# CaseAnswer.answer_choice rows that pointed to this choice become null (SET_NULL FK).
+# This is safe — the answer row survives; the user just loses the choice reference.
+# EXPAND: add soft-delete if you need to preserve old choice labels for exports.
+
+@admin_required
+@require_http_methods(['POST'])
+def ajax_delete_choice(request, choice_id):
+    """
+    POST /ajax/builder/choice/<id>/delete/
+    Response: { ok: true }
+    """
+    choice = get_object_or_404(RequirementChoice, id=choice_id)
+    choice.delete()
+    # CaseAnswer rows with answer_choice=this are SET_NULL via FK definition.
+    return JsonResponse({'ok': True})
+
+
+# ── 13. EDIT CATEGORY REQUIREMENT OVERRIDE ───────────────────
+# Updates is_required_override on a CategoryRequirement.
+# None = use library default | True = force required | False = force optional.
+# EXPAND: add an 'order' field update here to combine with drag-drop reorder.
+
+@admin_required
+@require_http_methods(['POST'])
+def ajax_edit_category_req(request, cr_id):
+    """
+    POST /ajax/builder/category-req/<id>/edit/
+    Body: { is_required_override: true | false | null }
+    Response: { ok: true, is_required_effective: true|false }
+    """
+    cr = get_object_or_404(CategoryRequirement, id=cr_id)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
+
+    override = body.get('is_required_override', 'UNSET')
+    if override == 'UNSET':
+        pass   # nothing to update
+    elif override is None:
+        cr.is_required_override = None      # reset to library default
+    elif isinstance(override, bool):
+        cr.is_required_override = override  # set override
+    else:
+        return JsonResponse({'ok': False, 'errors': {'is_required_override': ['Must be true, false, or null.']}})
+
+    cr.save()
+    return JsonResponse({'ok': True, 'is_required_effective': cr.effective_is_required()})
+
+
+# ══════════════════════════════════════════════════════════════
+# PHASE 4 — GOVERNMENT FORMS LIBRARY AJAX
+# ══════════════════════════════════════════════════════════════
+# Forms are reusable objects (IMM5710, IMM5257, etc.).
+# Each form contains requirements linked via FormRequirement (M2M).
+# Each category can require multiple forms via CategoryForm (M2M).
+# The same Requirement appears in multiple forms → zero duplication.
+#
+# All views follow the same pattern as the existing AJAX library endpoints:
+#   @admin_required (or @superadmin_required for destructive ops)
+#   @require_http_methods([...])
+#   JSON body in/out
+# ══════════════════════════════════════════════════════════════
+
+from cases.models import GovernmentForm, FormRequirement, CategoryForm as CatForm
+
+
+# ── GET: List all government forms ────────────────────────────
+@admin_required
+def ajax_get_forms(request):
+    """
+    GET /ajax/builder/forms/
+    Query params: ?q=<search> (optional text search by code or name)
+    Response: { forms: [{id, code, name, description, source_url, is_active, req_count, category_count}] }
+    """
+    qs = GovernmentForm.objects.filter(is_active=True).order_by('code')
+
+    search = request.GET.get('q', '').strip()
+    if search:
+        # Search both code (e.g. 'IMM5710') and name (e.g. 'Application to...')
+        from django.db.models import Q
+        qs = qs.filter(Q(code__icontains=search) | Q(name__icontains=search))
+
+    data = []
+    for form in qs:
+        data.append({
+            'id':             form.id,
+            'code':           form.code,
+            'name':           form.name,
+            'description':    form.description or '',
+            'source_url':     form.source_url or '',
+            'is_active':      form.is_active,
+            'req_count':      form.req_count(),       # count of active requirements in this form
+            'category_count': form.category_count(),  # how many categories require this form
+        })
+    return JsonResponse({'forms': data})
+
+
+# ── POST: Create a new government form ────────────────────────
+@admin_required
+@require_http_methods(['POST'])
+def ajax_create_form(request):
+    """
+    POST /ajax/builder/form/create/
+    Body: { code, name, description (optional), source_url (optional) }
+    Response: { ok: true, form: {id, code, name, ...} }
+              { ok: false, errors: {...} }
+    """
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
+
+    code = body.get('code', '').strip().upper()   # normalize to uppercase: 'imm5710' → 'IMM5710'
+    name = body.get('name', '').strip()
+
+    errors = {}
+    if not code:
+        errors['code'] = ['Form code is required (e.g. IMM5710).']
+    if not name:
+        errors['name'] = ['Form name is required.']
+    if code and GovernmentForm.objects.filter(code=code).exists():
+        errors['code'] = [f'A form with code {code!r} already exists.']
+
+    if errors:
+        return JsonResponse({'ok': False, 'errors': errors})
+
+    form = GovernmentForm.objects.create(
+        code        = code,
+        name        = name,
+        description = body.get('description', '').strip() or None,
+        source_url  = body.get('source_url',  '').strip() or None,
+    )
+    return JsonResponse({
+        'ok': True,
+        'form': {
+            'id':          form.id,
+            'code':        form.code,
+            'name':        form.name,
+            'description': form.description or '',
+            'source_url':  form.source_url or '',
+            'is_active':   form.is_active,
+            'req_count':      0,   # newly created — no requirements yet
+            'category_count': 0,
+        }
+    })
+
+
+# ── GET: Form detail — metadata + requirements grouped by section ─
+@admin_required
+def ajax_get_form_detail(request, form_id):
+    """
+    GET /ajax/builder/form/<id>/
+    Response: {
+      form: {id, code, name, description, source_url, is_active},
+      form_requirements: [
+        {fr_id, req_id, name, type, description, is_required, is_eligibility,
+         form_section, field_id, order, section_name}
+      ],
+      used_in_categories: [{id, name, service_name}]
+    }
+    FormRequirements are returned in order (by FormRequirement.order).
+    used_in_categories tells the UI which categories link to this form.
+    """
+    form = get_object_or_404(GovernmentForm, id=form_id)
+
+    # Optional: ?section=Personal Information — filter displayed requirements by form_section.
+    # Useful when a form has many sections and the JS wants to render one at a time.
+    section_filter = request.GET.get('section', '').strip()
+
+    # Requirements in this form, ordered for display
+    form_reqs_qs = (
+        FormRequirement.objects
+        .filter(form=form, requirement__is_active=True)
+    )
+    if section_filter:
+        form_reqs_qs = form_reqs_qs.filter(form_section__iexact=section_filter)
+
+    form_reqs = (
+        form_reqs_qs
+        .select_related('requirement', 'requirement__section')
+        .order_by('order')
+    )
+    reqs_data = []
+    for fr in form_reqs:
+        req = fr.requirement
+        reqs_data.append({
+            'fr_id':          fr.id,        # FormRequirement PK — used for remove/reorder
+            'req_id':         req.id,
+            'name':           req.name,
+            'type':           req.type,
+            'description':    req.description or '',
+            'is_required':    req.is_required,
+            'is_eligibility': req.is_eligibility,  # show ⚑ badge in form detail panel
+            'eligibility_operator':     req.eligibility_operator or '',
+            'eligibility_value':        req.eligibility_value or '',
+            'form_section':   fr.form_section,     # section inside THIS form
+            'field_id':       fr.field_id,         # gov form field identifier
+            'order':          fr.order,
+            'section_name':   req.section.name if req.section else 'Uncategorized',
+        })
+
+    # Categories that require this form
+    cat_data = []
+    for cf in CatForm.objects.filter(form=form).select_related('category', 'category__service'):
+        cat_data.append({
+            'id':           cf.category.id,
+            'name':         cf.category.name,
+            'service_name': cf.category.service.name,
+        })
+
+    return JsonResponse({
+        'form': {
+            'id':          form.id,
+            'code':        form.code,
+            'name':        form.name,
+            'description': form.description or '',
+            'source_url':  form.source_url or '',
+            'is_active':   form.is_active,
+        },
+        'form_requirements':   reqs_data,
+        'used_in_categories':  cat_data,
+    })
+
+
+# ── POST: Edit a government form's metadata ────────────────────
+@admin_required
+@require_http_methods(['POST'])
+def ajax_edit_form(request, form_id):
+    """
+    POST /ajax/builder/form/<id>/edit/
+    Body: { code (optional), name (optional), description (optional),
+            source_url (optional), is_active (optional) }
+    Response: { ok: true, form: {...} }
+    """
+    form = get_object_or_404(GovernmentForm, id=form_id)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
+
+    errors = {}
+    new_code = body.get('code', form.code).strip().upper()
+    new_name = body.get('name', form.name).strip()
+
+    if not new_code:
+        errors['code'] = ['Code is required.']
+    if not new_name:
+        errors['name'] = ['Name is required.']
+    # Check uniqueness only if the code actually changed
+    if new_code and new_code != form.code and GovernmentForm.objects.filter(code=new_code).exists():
+        errors['code'] = [f'A form with code {new_code!r} already exists.']
+
+    if errors:
+        return JsonResponse({'ok': False, 'errors': errors})
+
+    form.code        = new_code
+    form.name        = new_name
+    form.description = body.get('description', form.description or '').strip() or None
+    form.source_url  = body.get('source_url',  form.source_url  or '').strip() or None
+    if 'is_active' in body:
+        form.is_active = bool(body['is_active'])
+    form.save()
+
+    return JsonResponse({
+        'ok': True,
+        'form': {
+            'id':          form.id,
+            'code':        form.code,
+            'name':        form.name,
+            'description': form.description or '',
+            'source_url':  form.source_url or '',
+            'is_active':   form.is_active,
+            'req_count':      form.req_count(),
+            'category_count': form.category_count(),
+        }
+    })
+
+
+# ── POST: Soft-delete a government form ───────────────────────
+@admin_required
+@require_http_methods(['POST'])
+def ajax_delete_form(request, form_id):
+    """
+    POST /ajax/builder/form/<id>/delete/
+    Soft-delete: sets is_active=False.
+    Does NOT delete FormRequirement or CategoryForm rows — they go dark with the form.
+    Response: { ok: true, message: '...' }
+    """
+    form = get_object_or_404(GovernmentForm, id=form_id)
+    form.is_active = False
+    form.save()
+    return JsonResponse({'ok': True, 'message': f'{form.code} has been deactivated.'})
+
+
+# ── POST: Link a library requirement to a form ────────────────
+@admin_required
+@require_http_methods(['POST'])
+def ajax_add_req_to_form(request, form_id):
+    """
+    POST /ajax/builder/form/<id>/add-req/
+    Body: { requirement_id, form_section (optional), field_id (optional) }
+    Response: { ok: true, fr: {fr_id, req_id, name, type, form_section, field_id, order} }
+
+    WHY this matters for deduplication:
+      If "Background Check" is already in the library, linking it to IMM5710 here
+      creates ONE FormRequirement row — the Requirement object is shared, not copied.
+      The same requirement can be linked to IMM5257 later without any duplication.
+    """
+    form = get_object_or_404(GovernmentForm, id=form_id, is_active=True)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
+
+    req_id = body.get('requirement_id')
+    if not req_id:
+        return JsonResponse({'ok': False, 'errors': {'requirement_id': ['Required.']}})
+
+    req = get_object_or_404(Requirement, id=req_id, is_active=True)
+
+    if FormRequirement.objects.filter(form=form, requirement=req).exists():
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['This requirement is already in this form.']}})
+
+    # Place new requirement at the end of the form's current list
+    max_order = (
+        FormRequirement.objects.filter(form=form).aggregate(m=Max('order'))['m'] or 0
+    )
+    fr = FormRequirement.objects.create(
+        form         = form,
+        requirement  = req,
+        form_section = body.get('form_section', '').strip(),
+        field_id     = body.get('field_id', '').strip(),
+        order        = max_order + 1,
+    )
+
+    return JsonResponse({
+        'ok': True,
+        'fr': {
+            'fr_id':          fr.id,
+            'req_id':         req.id,
+            'name':           req.name,
+            'type':           req.type,
+            'description':    req.description or '',
+            'is_required':    req.is_required,
+            'is_eligibility': req.is_eligibility,
+            'form_section':   fr.form_section,
+            'field_id':       fr.field_id,
+            'order':          fr.order,
+            'section_name':   req.section.name if req.section else 'Uncategorized',
+        }
+    })
+
+
+# ── POST: Remove a requirement from a form ────────────────────
+@admin_required
+@require_http_methods(['POST'])
+def ajax_remove_req_from_form(request, form_id, fr_id):
+    """
+    POST /ajax/builder/form/<id>/req/<fr_id>/remove/
+    Deletes the FormRequirement row (the link only — Requirement stays in the library).
+    Response: { ok: true }
+    """
+    # No body fields needed — operation is fully determined by URL params.
+    # Body is parsed anyway for consistency with other POST views (CSRF flow).
+    _ = request.body
+    fr = get_object_or_404(FormRequirement, id=fr_id, form_id=form_id)
+    fr.delete()
+    return JsonResponse({'ok': True})
+
+
+# ── GET: Forms linked to a category ───────────────────────────
+@admin_required
+def ajax_get_forms_for_category(request, category_id):
+    """
+    GET /ajax/builder/category/<id>/forms/
+    Response: {
+      forms: [{cf_id, form_id, code, name, req_count, order}],
+      summary_requirements: [{id, name, type, is_eligibility}]
+        — deduplicated list of all requirements from all linked forms combined.
+          Shows the admin exactly what requirements a user will face when they apply.
+    }
+    """
+    category = get_object_or_404(Category, id=category_id)
+
+    # ?skip_summary=1 lets the JS skip the deduplication pass when it only needs the forms list.
+    # This is cheaper when the Forms tab is first opened (summary can be loaded on demand).
+    skip_summary = request.GET.get('skip_summary', '0') == '1'
+
+    cat_forms = (
+        CatForm.objects
+        .filter(category=category)
+        .select_related('form')
+        .order_by('order')
+    )
+
+    forms_data = []
+    for cf in cat_forms:
+        forms_data.append({
+            'cf_id':     cf.id,            # CategoryForm PK — used for remove calls
+            'form_id':   cf.form.id,
+            'code':      cf.form.code,
+            'name':      cf.form.name,
+            'req_count': cf.form.req_count(),
+            'order':     cf.order,
+        })
+
+    # ── Summary: deduplicated requirements across all linked forms ──────────
+    # Skipped when ?skip_summary=1 (caller only needs the forms list, not the full summary).
+    # Use a dict keyed on requirement_id to automatically deduplicate:
+    # "Background Check" in both IMM5710 and IMM5257 → appears once in the summary.
+    seen = {}   # requirement_id → data dict
+    if not skip_summary:
+        for cf in cat_forms:
+            for fr in (
+                FormRequirement.objects
+                .filter(form=cf.form, requirement__is_active=True)
+                .select_related('requirement')
+                .order_by('order')
+            ):
+                req = fr.requirement
+                if req.id not in seen:
+                    seen[req.id] = {
+                        'id':             req.id,
+                        'name':           req.name,
+                        'type':           req.type,
+                        'is_required':    req.is_required,
+                        'is_eligibility': req.is_eligibility,
+                        'form_section':   fr.form_section,   # from the first form that defines it
+                        'source_forms':   [cf.form.code],    # which forms include this req (for tooltip)
+                    }
+                else:
+                    # Already seen — just record this additional source form
+                    seen[req.id]['source_forms'].append(cf.form.code)
+
+    return JsonResponse({
+        'forms':                forms_data,
+        'summary_requirements': list(seen.values()),
+    })
+
+
+# ── POST: Link a form to a category ───────────────────────────
+@admin_required
+@require_http_methods(['POST'])
+def ajax_add_form_to_category(request, category_id):
+    """
+    POST /ajax/builder/category/<id>/add-form/
+    Body: { form_id }
+    Response: { ok: true, cf: {cf_id, form_id, code, name, req_count, order} }
+    """
+    category = get_object_or_404(Category, id=category_id, is_active=True)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
+
+    form_id = body.get('form_id')
+    if not form_id:
+        return JsonResponse({'ok': False, 'errors': {'form_id': ['Required.']}})
+
+    form = get_object_or_404(GovernmentForm, id=form_id, is_active=True)
+
+    if CatForm.objects.filter(category=category, form=form).exists():
+        return JsonResponse({'ok': False, 'errors': {'__all__': [f'{form.code} is already linked to this category.']}})
+
+    max_order = CatForm.objects.filter(category=category).aggregate(m=Max('order'))['m'] or 0
+    cf = CatForm.objects.create(category=category, form=form, order=max_order + 1)
+
+    return JsonResponse({
+        'ok': True,
+        'cf': {
+            'cf_id':     cf.id,
+            'form_id':   form.id,
+            'code':      form.code,
+            'name':      form.name,
+            'req_count': form.req_count(),
+            'order':     cf.order,
+        }
+    })
+
+
+# ── POST: Unlink a form from a category ───────────────────────
+@admin_required
+@require_http_methods(['POST'])
+def ajax_remove_form_from_category(request, category_id, cf_id):
+    """
+    POST /ajax/builder/category/<id>/form/<cf_id>/remove/
+    Deletes the CategoryForm row. The form and its requirements are unchanged.
+    Response: { ok: true }
+    """
+    # No body fields needed — operation fully determined by URL params.
+    _ = request.body
+    cf = get_object_or_404(CatForm, id=cf_id, category_id=category_id)
+    cf.delete()
+    return JsonResponse({'ok': True})
+
+
+# ── POST: Crawler placeholder ──────────────────────────────────
+@admin_required
+@require_http_methods(['POST'])
+def ajax_import_from_url(request):
+    """
+    POST /ajax/builder/import/
+    Body: { url, form_id }
+
+    Phase 4 placeholder — the web crawler is not yet implemented.
+    For now: saves the URL to GovernmentForm.source_url so it is recorded
+    for when the crawler is built. Returns a friendly "coming soon" message.
+
+    Future crawler behaviour (Phase 5+):
+      1. Fetch the URL (requests + BeautifulSoup / Playwright for JS-heavy pages)
+      2. Parse eligibility conditions (e.g. "arrived on or before Feb 28, 2025")
+         → create Requirement(type='date', is_eligibility=True, ...)
+      3. Parse form fields (section name + field label + type)
+         → look up existing matching Requirement by name (deduplicate)
+         → create FormRequirement rows for new ones
+      4. Return created/matched requirements so admin can review before saving
+    """
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'errors': {'__all__': ['Invalid JSON']}}, status=400)
+
+    url     = body.get('url', '').strip()
+    form_id = body.get('form_id')
+
+    if not url:
+        return JsonResponse({'ok': False, 'errors': {'url': ['URL is required.']}})
+
+    # Save the URL to the form so it is available when the crawler is implemented.
+    if form_id:
+        try:
+            form = GovernmentForm.objects.get(id=form_id, is_active=True)
+            form.source_url = url
+            form.save(update_fields=['source_url'])
+            saved_msg = f' URL saved to {form.code}.'
+        except GovernmentForm.DoesNotExist:
+            saved_msg = ' (Form not found — URL not saved.)'
+    else:
+        saved_msg = ''
+
+    return JsonResponse({
+        'ok':      True,
+        'message': (
+            'Web crawler is not yet implemented.{} '
+            'You can add requirements manually in the meantime.'
+        ).format(saved_msg),
+    })
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1993,4 +3549,311 @@ def contact_messages(request):
     return render(request, 'admin_panel/contact_messages.html', {
         'contact_msgs': msgs_qs,
         'unread_count': unread,
+    })
+
+
+# ══════════════════════════════════════════════════════════════
+# Phase 5 — Eligibility Scoring System
+# ══════════════════════════════════════════════════════════════
+
+# ── AJAX: Eligibility check for a single category ─────────────
+@admin_permission_required('can_view_all_cases')
+def ajax_eligibility_check(request):
+    """
+    GET /admin-panel/ajax/eligibility/?user_email=x@y.com&category_id=5
+
+    Returns the eligibility score for a user against a specific category.
+    Used by:
+      - create_case.html (inline panel when admin selects category + enters email)
+      - service_browser.html (per-category badge)
+
+    Response shape:
+    {
+      "ok":       true,
+      "score":    80,
+      "passed":   4,
+      "failed":   1,
+      "unknown":  0,
+      "total":    5,
+      "user_name": "Ali Hassan",
+      "quiz_url":  "/admin-panel/users/5/eligibility-quiz/",
+      "details": [
+        {"id": 3, "name": "Date of Arrival", "passed": true,
+         "source": "profile", "fail_message": null},
+        ...
+      ]
+    }
+
+    WHY GET (not POST): this is a read-only calculation — no state changes.
+    GET is also easier to test directly in the browser address bar.
+    """
+    from cases.models import Category
+    from cases.services import compute_eligibility_score
+    from users.models import User as UserModel
+
+    user_email  = request.GET.get('user_email', '').strip()
+    category_id = request.GET.get('category_id', '').strip()
+
+    # Validate inputs — both are required
+    if not user_email or not category_id:
+        return JsonResponse({'ok': False, 'error': 'user_email and category_id are required.'}, status=400)
+
+    try:
+        target_user = UserModel.objects.select_related('profile').get(email=user_email)
+    except UserModel.DoesNotExist:
+        return JsonResponse({'ok': False, 'error': f'No user found with email: {user_email}'}, status=404)
+
+    try:
+        category = Category.objects.get(id=int(category_id), is_active=True)
+    except (Category.DoesNotExist, ValueError):
+        return JsonResponse({'ok': False, 'error': 'Category not found.'}, status=404)
+
+    result = compute_eligibility_score(target_user, category)
+
+    # Build the quiz URL — deep link to the eligibility quiz for this user
+    # so the admin can click "Answer remaining questions →" in the panel
+    quiz_url = f'/admin-panel/users/{target_user.id}/eligibility-quiz/'
+
+    # Get user display name for the panel header
+    profile   = getattr(target_user, 'profile', None)
+    user_name = profile.full_name() if profile and profile.full_name() else target_user.email
+
+    return JsonResponse({
+        'ok':       True,
+        'score':    result['score'],
+        'passed':   result['passed'],
+        'failed':   result['failed'],
+        'unknown':  result['unknown'],
+        'total':    result['total'],
+        'user_name': user_name,
+        'quiz_url':  quiz_url,
+        'details':  result['details'],
+    })
+
+
+# ── AJAX: All child categories with eligibility scores ────────
+@admin_permission_required('can_view_all_cases')
+def ajax_service_eligibility(request):
+    """
+    GET /admin-panel/ajax/service-eligibility/?service_id=5&user_email=x@y.com
+    GET /admin-panel/ajax/service-eligibility/?parent_id=12&user_email=x@y.com
+
+    Returns child categories of a service or parent category, each with
+    an eligibility score for the given user.
+
+    One API call returns all children at once — more efficient than calling
+    ajax_eligibility_check per category when rendering the service browser.
+
+    Response:
+    {
+      "ok": true,
+      "categories": [
+        {"id": 12, "name": "Open Work Permit", "score": 80,
+         "has_children": true, "passed": 4, "failed": 1, "unknown": 0, "total": 5},
+        ...
+      ]
+    }
+
+    If user_email is absent or invalid, scores are omitted and only category
+    metadata is returned (useful for rendering the service tree without a user selected).
+    """
+    from cases.models import Category, Service
+    from cases.services import compute_eligibility_score
+    from users.models import User as UserModel
+
+    service_id  = request.GET.get('service_id', '').strip()
+    parent_id   = request.GET.get('parent_id',  '').strip()
+    user_email  = request.GET.get('user_email', '').strip()
+
+    # At least one of service_id or parent_id is required
+    if not service_id and not parent_id:
+        return JsonResponse({'ok': False, 'error': 'service_id or parent_id required.'}, status=400)
+
+    # Build the categories queryset
+    if parent_id:
+        try:
+            categories = list(
+                Category.objects.filter(parent_id=int(parent_id), is_active=True)
+                .order_by('name')
+            )
+        except ValueError:
+            return JsonResponse({'ok': False, 'error': 'Invalid parent_id.'}, status=400)
+    else:
+        try:
+            service    = Service.objects.get(id=int(service_id), is_active=True)
+            categories = list(
+                Category.objects.filter(service=service, parent__isnull=True, is_active=True)
+                .order_by('name')
+            )
+        except (Service.DoesNotExist, ValueError):
+            return JsonResponse({'ok': False, 'error': 'Service not found.'}, status=404)
+
+    # Resolve user (optional — if missing we return categories without scores)
+    target_user = None
+    if user_email:
+        try:
+            target_user = UserModel.objects.select_related('profile').get(email=user_email)
+        except UserModel.DoesNotExist:
+            pass   # silently proceed without scoring — not an error for the browser
+
+    # Build response items — compute score for each category if user is known
+    items = []
+    for cat in categories:
+        has_children = Category.objects.filter(parent=cat, is_active=True).exists()
+        item = {
+            'id':           cat.id,
+            'name':         cat.name,
+            'description':  cat.description or '',
+            'has_children': has_children,
+        }
+        if target_user:
+            result = compute_eligibility_score(target_user, cat)
+            item.update({
+                'score':   result['score'],
+                'passed':  result['passed'],
+                'failed':  result['failed'],
+                'unknown': result['unknown'],
+                'total':   result['total'],
+            })
+        else:
+            # No user — mark scores as None so the UI can show "select a user" hint
+            item.update({'score': None, 'passed': 0, 'failed': 0, 'unknown': 0, 'total': 0})
+        items.append(item)
+
+    return JsonResponse({'ok': True, 'categories': items})
+
+
+# ── SERVICE BROWSER ───────────────────────────────────────────
+@admin_permission_required('can_view_all_cases')
+def service_browser(request):
+    """
+    GET /admin-panel/services/browse/
+    GET /admin-panel/services/browse/?user_email=x@y.com
+
+    Service browser with per-category eligibility scoring.
+    Admins select a user → browse services → see how eligible that user is
+    for each category → click "+ Create Case" to open the pre-filled case form.
+
+    The page renders a flat list of services on load (no categories yet).
+    Clicking a service row triggers AJAX → ajax_service_eligibility → renders
+    categories inline with score badges.
+    """
+    from cases.models import Service
+    from users.models import User as UserModel
+
+    services    = Service.objects.filter(is_active=True).order_by('name')
+    user_email  = request.GET.get('user_email', '').strip()
+    target_user = None
+
+    if user_email:
+        try:
+            target_user = UserModel.objects.select_related('profile').get(email=user_email)
+        except UserModel.DoesNotExist:
+            pass   # invalid email — show browser without pre-selected user
+
+    return render(request, 'admin_panel/service_browser.html', {
+        'services':    services,
+        'user_email':  user_email,
+        'target_user': target_user,
+    })
+
+
+# ── ELIGIBILITY QUIZ ──────────────────────────────────────────
+@admin_permission_required('can_view_all_cases')
+def eligibility_quiz(request, user_id):
+    """
+    GET  /admin-panel/users/<user_id>/eligibility-quiz/
+    POST /admin-panel/users/<user_id>/eligibility-quiz/
+
+    Shows all active eligibility-gate requirements across all categories.
+    Answers that can be auto-filled from the user's profile are shown
+    as pre-filled + read-only.  Only questions with no profile mapping
+    (or where the profile field is empty) are editable.
+
+    POST saves answers to EligibilityAnswer (upsert per requirement).
+    Redirects to service_browser after saving.
+
+    WHY show profile-mapped questions as read-only:
+      The admin/user should know which answers came from their profile
+      so they can update the profile if data is wrong, rather than
+      storing a duplicate answer in EligibilityAnswer.
+    """
+    from cases.models import Requirement
+    from cases.services import resolve_profile_value
+    from users.models import User as UserModel, EligibilityAnswer
+
+    target_user = get_object_or_404(UserModel.objects.select_related('profile'), id=user_id)
+
+    # Gather all active eligibility requirements across ALL categories — de-duplicated.
+    # WHY de-duplicate: the same "Date of Arrival" requirement appears in 10 categories
+    # but the user only answers it once.  We use distinct() on Requirement objects.
+    elig_reqs = (
+        Requirement.objects
+        .filter(is_eligibility=True, is_active=True)
+        .distinct()
+        .order_by('name')
+    )
+
+    # Pre-fetch existing quiz answers for this user
+    existing_map = {
+        ea.requirement_id: ea
+        for ea in EligibilityAnswer.objects.filter(
+            user=target_user, requirement_id__in=elig_reqs.values_list('id', flat=True)
+        )
+    }
+
+    if request.method == 'POST':
+        # Save / update answers for each eligibility requirement
+        for req in elig_reqs:
+            # Skip profile-mapped requirements — the answer lives in the profile
+            if req.profile_mapping and resolve_profile_value(target_user, req.profile_mapping) is not None:
+                continue
+
+            field_key = f'elig_{req.id}'
+            raw_value = request.POST.get(field_key, '').strip()
+
+            if not raw_value:
+                continue   # admin left it blank — don't save an empty answer
+
+            # Upsert: create or update the EligibilityAnswer row
+            ea, _ = EligibilityAnswer.objects.get_or_create(
+                user=target_user, requirement=req,
+            )
+            if req.type == 'date':
+                # Store as date object so check_eligibility() can compare correctly
+                from datetime import date as date_type
+                try:
+                    ea.answer_date = date_type.fromisoformat(raw_value)
+                    ea.answer_text = ''
+                except ValueError:
+                    continue   # skip malformed date input
+            else:
+                ea.answer_text = raw_value
+                ea.answer_date = None
+            ea.save()
+
+        return redirect('admin_panel:service_browser')
+
+    # Build question list for the template
+    # Each item: {req, profile_value, profile_source, quiz_answer}
+    questions = []
+    for req in elig_reqs:
+        profile_value = None
+        if req.profile_mapping:
+            profile_value = resolve_profile_value(target_user, req.profile_mapping)
+
+        quiz_ea = existing_map.get(req.id)
+
+        questions.append({
+            'req':           req,
+            'profile_value': profile_value,
+            # If profile_value is set, this question is auto-answered — show read-only
+            'from_profile':  profile_value is not None,
+            'quiz_answer':   quiz_ea,
+        })
+
+    return render(request, 'admin_panel/eligibility_quiz.html', {
+        'target_user': target_user,
+        'questions':   questions,
+        'quiz_url':    request.path,
     })

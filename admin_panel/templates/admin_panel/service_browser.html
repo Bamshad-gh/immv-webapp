@@ -1,0 +1,507 @@
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/service_browser.html
+
+Service Browser — hierarchical accordion.
+  Service → click → child categories load with eligibility % badges.
+  Category with children → click → subcategories load inline.
+  Leaf category → "Create Case" button links to case creation.
+
+Pass a ?user_email=x@y.com query param to pre-fill the user.
+EXPAND: add "bulk create case" once multi-case workflows exist.
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Service Browser{% endblock %}
+{% block topbar_title %}Service Browser{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ── Page layout ─────────────────────────────────────────── */
+  .browser-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* ── User email bar ──────────────────────────────────────── */
+  .user-bar {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .65rem 1rem;
+  }
+  .user-bar label {
+    font-size: .85rem;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--slate);
+  }
+  .user-bar input {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: .35rem .65rem;
+    font-size: .9rem;
+  }
+  .user-bar button {
+    /* Triggers an eligibility re-load for the expanded service */
+    white-space: nowrap;
+  }
+
+  /* ── Service accordion list ──────────────────────────────── */
+  .service-list {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+  }
+
+  /* ── Single service card ─────────────────────────────────── */
+  .service-card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .service-header {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .85rem 1.1rem;
+    cursor: pointer;
+    user-select: none;
+    transition: background .15s;
+  }
+  .service-header:hover { background: #f8f9fa; }
+
+  .service-chevron {
+    /* Rotates 90° when expanded */
+    transition: transform .2s;
+    flex-shrink: 0;
+    color: var(--slate);
+    font-size: .8rem;
+  }
+  .service-card.expanded .service-chevron {
+    transform: rotate(90deg);
+  }
+
+  .service-name { font-weight: 600; flex: 1; }
+  .service-cat-count { font-size: .8rem; color: var(--slate); }
+
+  /* ── Category rows ───────────────────────────────────────── */
+  .category-rows {
+    display: none;     /* shown when parent .service-card is .expanded */
+    border-top: 1px solid var(--border);
+    padding: .5rem 0;
+  }
+  .service-card.expanded .category-rows { display: block; }
+
+  .cat-row {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .55rem 1.25rem .55rem 2rem;
+    font-size: .9rem;
+    transition: background .15s;
+  }
+  .cat-row:hover { background: #f8f9fa; }
+
+  /* Indent nested subcategory rows */
+  .cat-row[data-depth="1"] { padding-left: 3rem; }
+  .cat-row[data-depth="2"] { padding-left: 4rem; }
+  .cat-row[data-depth="3"] { padding-left: 5rem; }
+
+  .cat-name { flex: 1; }
+  .cat-chevron {
+    /* Clickable only when the category has children */
+    cursor: pointer;
+    color: var(--slate);
+    font-size: .75rem;
+    transition: transform .2s;
+    visibility: hidden;  /* JS shows it when has_children=true */
+  }
+  .cat-chevron.visible { visibility: visible; }
+  .cat-chevron.open    { transform: rotate(90deg); }
+
+  /* ── Eligibility score badge ─────────────────────────────── */
+  /* Color is set inline by JS: green/amber/red */
+  .elig-badge {
+    font-size: .78rem;
+    font-weight: 700;
+    padding: .1rem .5rem;
+    border-radius: 99px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* ── Mini progress bar inside category row ───────────────── */
+  .elig-bar-wrap {
+    width: 80px;
+    height: 6px;
+    background: #e2e8f0;
+    border-radius: 99px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .elig-bar-fill {
+    height: 100%;
+    border-radius: 99px;
+  }
+
+  /* ── "Create Case" button inside row ─────────────────────── */
+  .btn-create-case {
+    font-size: .78rem;
+    padding: .2rem .6rem;
+    background: var(--navy);
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .btn-create-case:hover { opacity: .85; }
+
+  /* ── Loading spinner row ─────────────────────────────────── */
+  .cat-loading {
+    padding: .6rem 2rem;
+    font-size: .85rem;
+    color: var(--slate);
+    font-style: italic;
+  }
+
+  /* ── "No eligibility data" note ──────────────────────────── */
+  .elig-note {
+    font-size: .78rem;
+    color: #94a3b8;
+    white-space: nowrap;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Service Browser</h1>
+  <p class="page-subtitle" style="color:var(--slate); font-size:.9rem; margin-top:.25rem;">
+    Select a user to see eligibility scores for every category.
+  </p>
+</div>
+
+<div class="browser-wrap">
+
+  <!-- ── User Email Bar ───────────────────────────────────────
+       The admin enters a client's email here. On change every
+       expanded service re-fetches its category scores.
+       PRE-FILLED: if the view was opened via a ?user_email= param.
+  ────────────────────────────────────────────────────────────── -->
+  <div class="user-bar">
+    <label for="sb-email">Client email</label>
+    <input type="email"
+           id="sb-email"
+           placeholder="client@example.com"
+           value="{{ request.GET.user_email|default:'' }}">
+    <button class="btn btn-primary" onclick="reloadAll()">Check Eligibility</button>
+    <a href="{% url 'admin_panel:eligibility_quiz' user_id=0 %}"
+       id="sb-quiz-link"
+       style="display:none; font-size:.85rem; color:var(--amber); text-decoration:underline; white-space:nowrap;">
+      Fill eligibility quiz →
+    </a>
+  </div>
+
+  <!-- ── Service List ─────────────────────────────────────────
+       Each service is a .service-card accordion.
+       Rendered server-side; category rows loaded via AJAX on expand.
+  ────────────────────────────────────────────────────────────── -->
+  <div class="service-list">
+    {% for service in services %}
+    <div class="service-card" id="svc-{{ service.id }}" data-service-id="{{ service.id }}">
+
+      <!-- Header — click to expand / collapse -->
+      <div class="service-header" onclick="toggleService({{ service.id }}, this)">
+        <!-- Chevron arrow ▶ rotates to ▼ when expanded -->
+        <span class="service-chevron">&#9654;</span>
+        <span class="service-name">{{ service.name }}</span>
+        <span class="service-cat-count">
+          {{ service.categories.count }} categor{{ service.categories.count|pluralize:"y,ies" }}
+        </span>
+      </div>
+
+      <!-- Category rows — empty until toggleService() populates them -->
+      <div class="category-rows" id="rows-{{ service.id }}">
+        <div class="cat-loading">Click to load categories…</div>
+      </div>
+
+    </div>
+    {% empty %}
+    <div class="card" style="color:var(--slate); text-align:center; padding:2rem;">
+      No active services found. Add one in the
+      <a href="{% url 'admin_panel:service_builder' %}">Service Builder</a>.
+    </div>
+    {% endfor %}
+  </div>
+
+</div><!-- /browser-wrap -->
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // ── State ──────────────────────────────────────────────────
+  // loadedServices: set of service IDs already fetched (so re-expanding doesn't refetch)
+  // expandedServices: set of service IDs currently open
+  // childRowsOpen: map of category_id → [child row elements] (for nested toggle)
+  var loadedServices  = {};   // { serviceId: true }
+  var expandedCats    = {};   // { categoryId: true } — open nested drilldowns
+
+  // Base URLs — Django reverse at render time
+  var urlEligibility  = "{% url 'admin_panel:ajax_service_eligibility' %}";
+  var urlCreateCase   = "{% url 'admin_panel:create_case' %}";  // base URL for case creation
+
+  // ── getEmail ────────────────────────────────────────────────
+  // Returns the current email value; empty string if not set.
+  function getEmail() {
+    return document.getElementById('sb-email').value.trim();
+  }
+
+  // ── toggleService ───────────────────────────────────────────
+  // Click handler on a service header. Expands or collapses the card.
+  // On first expand: fetches categories with eligibility scores.
+  // On subsequent expands with a DIFFERENT email: re-fetches scores.
+  function toggleService(serviceId, headerEl) {
+    var card = document.getElementById('svc-' + serviceId);
+
+    // Toggle the .expanded class — CSS does all the show/hide work
+    var isExpanded = card.classList.toggle('expanded');
+
+    if (!isExpanded) return;   // collapsed — nothing more to do
+
+    // Fetch or refresh category rows
+    loadCategories(serviceId);
+  }
+
+  // ── loadCategories ─────────────────────────────────────────
+  // Fetches /ajax/service-eligibility/?service_id=X&user_email=Y
+  // and renders a row for each child category.
+  function loadCategories(serviceId, parentId, depth, insertAfterEl) {
+    // depth  = nesting level (0=top, 1=subcategory, etc.)
+    // insertAfterEl = DOM element to insert rows after (for nested)
+    depth = depth || 0;
+    var rowsContainer = document.getElementById('rows-' + serviceId);
+
+    // Show loading placeholder at top level
+    if (depth === 0) {
+      rowsContainer.innerHTML = '<div class="cat-loading">Loading…</div>';
+    }
+
+    // Build URL — either service_id (top level) or parent_id (nested)
+    var email = getEmail();
+    var url   = urlEligibility + '?';
+    if (parentId) {
+      url += 'parent_id=' + parentId;
+    } else {
+      url += 'service_id=' + serviceId;
+    }
+    if (email) url += '&user_email=' + encodeURIComponent(email);
+
+    fetch(url)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.ok) {
+          if (depth === 0) {
+            rowsContainer.innerHTML =
+              '<div class="cat-loading" style="color:#dc2626;">' +
+              (data.error || 'Error loading categories') + '</div>';
+          }
+          return;
+        }
+
+        if (depth === 0) {
+          // Clear and rebuild all top-level rows
+          rowsContainer.innerHTML = '';
+        }
+
+        // Decide where to insert new rows
+        var anchor = insertAfterEl || null;
+
+        if (data.categories.length === 0) {
+          var emptyRow = document.createElement('div');
+          emptyRow.className = 'cat-loading';
+          emptyRow.textContent = 'No categories found.';
+          if (anchor) {
+            anchor.parentNode.insertBefore(emptyRow, anchor.nextSibling);
+          } else {
+            rowsContainer.appendChild(emptyRow);
+          }
+          return;
+        }
+
+        // Show quiz link if user was resolved (has a user_id in response)
+        if (data.user_id && email) {
+          var quizLink = document.getElementById('sb-quiz-link');
+          quizLink.href = "{% url 'admin_panel:eligibility_quiz' user_id=0 %}".replace('/0/', '/' + data.user_id + '/');
+          quizLink.style.display = '';
+        }
+
+        // Build one row per category
+        var fragment = document.createDocumentFragment();
+        data.categories.forEach(function(cat) {
+          fragment.appendChild(makeCatRow(cat, serviceId, depth, rowsContainer));
+        });
+
+        if (anchor) {
+          // Insert nested rows right after the parent row
+          var refNode = anchor.nextSibling;
+          while (fragment.firstChild) {
+            anchor.parentNode.insertBefore(fragment.firstChild, refNode);
+          }
+        } else {
+          rowsContainer.appendChild(fragment);
+        }
+      })
+      .catch(function() {
+        if (depth === 0) {
+          rowsContainer.innerHTML =
+            '<div class="cat-loading" style="color:#dc2626;">Network error.</div>';
+        }
+      });
+  }
+
+  // ── makeCatRow ──────────────────────────────────────────────
+  // Builds a single .cat-row DOM element for one category.
+  // Includes eligibility badge, mini bar, and Create Case link.
+  function makeCatRow(cat, serviceId, depth, rowsContainer) {
+    var row = document.createElement('div');
+    row.className   = 'cat-row';
+    row.setAttribute('data-depth', depth);
+    row.setAttribute('data-cat-id', cat.id);
+    row.id = 'cat-row-' + cat.id;
+
+    // ── Chevron for categories that have children ──────────────
+    var chevron = document.createElement('span');
+    chevron.className = 'cat-chevron' + (cat.has_children ? ' visible' : '');
+    chevron.innerHTML = '&#9654;';   // ▶
+    if (cat.has_children) {
+      chevron.onclick = function() {
+        drillDown(cat.id, serviceId, depth + 1, row, chevron);
+      };
+    }
+    row.appendChild(chevron);
+
+    // ── Category name ──────────────────────────────────────────
+    var nameEl = document.createElement('span');
+    nameEl.className   = 'cat-name';
+    nameEl.textContent = cat.name;
+    row.appendChild(nameEl);
+
+    // ── Eligibility score (only when user email is present) ────
+    if (getEmail()) {
+      // Mini progress bar
+      var barWrap = document.createElement('div');
+      barWrap.className = 'elig-bar-wrap';
+      var barFill = document.createElement('div');
+      barFill.className = 'elig-bar-fill';
+      barFill.style.width      = cat.score + '%';
+      barFill.style.background = scoreColor(cat.score);
+      barWrap.appendChild(barFill);
+      row.appendChild(barWrap);
+
+      // Score badge — e.g. "80%"
+      var badge = document.createElement('span');
+      badge.className = 'elig-badge';
+      badge.textContent = cat.score + '%';
+      // Use light tinted background matching the score colour
+      var col = scoreColor(cat.score);
+      badge.style.color      = col;
+      badge.style.background = col + '18';
+      row.appendChild(badge);
+
+      // "unknown" note when score has unknowns
+      if (cat.unknown > 0) {
+        var note = document.createElement('span');
+        note.className   = 'elig-note';
+        note.textContent = cat.unknown + ' unknown';
+        row.appendChild(note);
+      }
+    }
+
+    // ── "Create Case" button (only for leaf / visible categories) ─
+    // We show it always — admin may want to create a case at any level.
+    var email = getEmail();
+    // Pre-fill the create case form with the selected category and user email.
+    // final_category is the hidden field the create_case view reads on submit.
+    var createUrl = urlCreateCase + '?final_category=' + cat.id +
+                    (email ? '&user_email=' + encodeURIComponent(email) : '');
+    var createBtn = document.createElement('a');
+    createBtn.className = 'btn-create-case';
+    createBtn.href      = createUrl;
+    createBtn.textContent = '+ Create Case';
+    row.appendChild(createBtn);
+
+    return row;
+  }
+
+  // ── drillDown ────────────────────────────────────────────────
+  // Expand / collapse nested subcategories inline below the parent row.
+  function drillDown(catId, serviceId, depth, parentRow, chevronEl) {
+    // If already expanded — remove child rows and collapse
+    if (expandedCats[catId]) {
+      expandedCats[catId] = false;
+      chevronEl.classList.remove('open');
+      // Remove all rows that were inserted as children of this category
+      var toRemove = document.querySelectorAll('[data-parent-cat="' + catId + '"]');
+      toRemove.forEach(function(el) { el.remove(); });
+      return;
+    }
+
+    // Mark expanded, rotate chevron
+    expandedCats[catId] = true;
+    chevronEl.classList.add('open');
+
+    // Fetch child categories and insert them after parentRow
+    loadCategories(serviceId, catId, depth, parentRow);
+    // We tag inserted rows so we can remove them on collapse
+    // (done inside loadCategories via makeCatRowTagged — see below)
+  }
+
+  // ── scoreColor ───────────────────────────────────────────────
+  // Returns the hex colour for a given 0–100 score.
+  // ≥75 = green, ≥50 = amber, <50 = red
+  function scoreColor(score) {
+    if (score >= 75) return '#16a34a';
+    if (score >= 50) return '#d97706';
+    return '#dc2626';
+  }
+
+  // ── reloadAll ────────────────────────────────────────────────
+  // Re-fetches categories for all currently expanded services.
+  // Called when admin changes the email and clicks "Check Eligibility".
+  function reloadAll() {
+    var allCards = document.querySelectorAll('.service-card.expanded');
+    allCards.forEach(function(card) {
+      var serviceId = card.getAttribute('data-service-id');
+      // Collapse nested drilldowns first (clean slate)
+      expandedCats = {};
+      loadCategories(serviceId);
+    });
+
+    // Hide quiz link until a fresh fetch provides user_id
+    document.getElementById('sb-quiz-link').style.display = 'none';
+  }
+
+  // ── Auto-expand first service on load (optional UX touch) ────
+  // If there is only one service, auto-expand it so the admin
+  // doesn't have to click just to see the single service.
+  // EXPAND: make this behaviour configurable via a data-attribute.
+  (function() {
+    var cards = document.querySelectorAll('.service-card');
+    if (cards.length === 1) {
+      var card  = cards[0];
+      var svcId = card.getAttribute('data-service-id');
+      card.classList.add('expanded');
+      loadCategories(svcId);
+    }
+  })();
+</script>
+{% endblock %}

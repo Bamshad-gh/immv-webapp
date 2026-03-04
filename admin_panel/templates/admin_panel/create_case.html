@@ -37,7 +37,58 @@ EXPAND: add group/managed_profile selection if needed.
 <input type="hidden" name="final_category" id="id_final_category">
 <input type="hidden" name="subcategory" id="id_subcategory_unused" value="">
 
+<!-- ── Eligibility Panel ───────────────────────────────────────
+     Shown automatically once BOTH a user email AND a final category
+     are present. Fetches /admin-panel/ajax/eligibility/ and renders
+     a score bar plus pass/fail rows.
 
+     Hidden by default (display:none). JS below controls visibility.
+     EXPAND: add a "Re-check" button if admin edits answers mid-flow.
+──────────────────────────────────────────────────────────────── -->
+<div id="eligibility-panel" style="display:none; margin-bottom:1.5rem;">
+  <div class="card" id="elig-card" style="border-left:4px solid #cbd5e0; background:#f8fafc; padding:1rem 1.25rem;">
+
+    <!-- Loading state — shown while AJAX request is in flight -->
+    <div id="elig-loading" style="display:none; color:#64748b; font-size:.9rem;">
+      Checking eligibility…
+    </div>
+
+    <!-- Error state — shown if the AJAX call fails or returns 4xx -->
+    <div id="elig-error" style="display:none; color:#dc2626; font-size:.9rem;"></div>
+
+    <!-- Result state — populated by renderEligibility() -->
+    <div id="elig-result" style="display:none;">
+
+      <!-- Header row: user name + score badge -->
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.75rem;">
+        <span style="font-weight:600; font-size:.95rem;" id="elig-user-name"></span>
+        <!-- Score badge: color changes via JS (green / amber / red) -->
+        <span id="elig-score-badge"
+              style="font-size:1.1rem; font-weight:700; padding:.15rem .6rem; border-radius:4px;">
+        </span>
+      </div>
+
+      <!-- Progress bar — width set by JS -->
+      <div style="background:#e2e8f0; border-radius:99px; height:8px; margin-bottom:.5rem; overflow:hidden;">
+        <div id="elig-bar" style="height:100%; border-radius:99px; transition:width .4s;"></div>
+      </div>
+
+      <!-- Counters: "4 passed · 1 failed · 0 unknown" -->
+      <div id="elig-counters" style="font-size:.8rem; color:#64748b; margin-bottom:1rem;"></div>
+
+      <!-- Requirement detail rows — one per eligibility gate -->
+      <div id="elig-rows"></div>
+
+      <!-- Quiz link — only shown if there are unknown requirements -->
+      <div id="elig-quiz-link" style="display:none; margin-top:.75rem; font-size:.85rem;">
+        <a id="elig-quiz-anchor" href="#" style="color:var(--amber, #c8820a); text-decoration:underline;">
+          Answer unanswered eligibility questions →
+        </a>
+      </div>
+
+    </div><!-- /elig-result -->
+  </div><!-- /elig-card -->
+</div><!-- /eligibility-panel -->
 
 
 <div class="form-group">
@@ -174,5 +225,213 @@ EXPAND: add group/managed_profile selection if needed.
     const val = document.querySelector('input[name="final_category"]').value;
     console.log('Submitting with final_category:', val);
   });
+
+
+  // ── Eligibility Panel ─────────────────────────────────────────
+  // Automatically checks the selected user's eligibility for the
+  // selected category once both values are present.
+  //
+  // Trigger points:
+  //   1. User email field loses focus (blur)
+  //   2. Hidden #id_final_category is set (triggered from addDropdown)
+  //
+  // Debounced so rapid category drill-down doesn't fire multiple requests.
+  // WHY debounce: the user may click through several subcategory levels
+  // quickly; we only care about the *final* settled value.
+
+  var eligDebounceTimer = null;   // tracks the pending timeout
+  var eligQuizBaseUrl   = "{% url 'admin_panel:eligibility_quiz' user_id=0 %}";
+  // ↑ We'll replace the trailing 0 with the real user id from the AJAX response
+
+  // showElig / hideElig / loadingElig — small helpers to manage visibility
+  function showEligPanel()    { document.getElementById('eligibility-panel').style.display = ''; }
+  function hideEligPanel()    { document.getElementById('eligibility-panel').style.display = 'none'; }
+  function setEligLoading(on) {
+    document.getElementById('elig-loading').style.display = on ? '' : 'none';
+    document.getElementById('elig-result').style.display  = on ? 'none' : '';
+    document.getElementById('elig-error').style.display   = 'none';
+  }
+  function setEligError(msg) {
+    document.getElementById('elig-loading').style.display = 'none';
+    document.getElementById('elig-result').style.display  = 'none';
+    var errEl = document.getElementById('elig-error');
+    errEl.style.display = '';
+    errEl.textContent   = msg;
+  }
+
+  // renderEligibility — fills in all sub-elements with the API response data
+  function renderEligibility(data) {
+    // ── Score badge color ──────────────────────────────────────
+    // ≥75 = green, ≥50 = amber, <50 = red
+    var score     = data.score;
+    var badgeEl   = document.getElementById('elig-score-badge');
+    var barEl     = document.getElementById('elig-bar');
+    var cardEl    = document.getElementById('elig-card');
+    var badgeColor, barColor, borderColor;
+
+    if (score >= 75) {
+      badgeColor  = '#15803d';  // green text
+      barColor    = '#22c55e';  // green fill
+      borderColor = '#22c55e';  // card left border
+    } else if (score >= 50) {
+      badgeColor  = '#92400e';  // amber text
+      barColor    = '#f59e0b';
+      borderColor = '#f59e0b';
+    } else {
+      badgeColor  = '#991b1b';  // red text
+      barColor    = '#ef4444';
+      borderColor = '#ef4444';
+    }
+
+    badgeEl.textContent          = score + '%';
+    badgeEl.style.color          = badgeColor;
+    badgeEl.style.background     = badgeColor + '18';  // very light tint
+    barEl.style.width            = score + '%';
+    barEl.style.background       = barColor;
+    cardEl.style.borderLeftColor = borderColor;
+
+    // ── User name ─────────────────────────────────────────────
+    document.getElementById('elig-user-name').textContent =
+      'Eligibility for ' + (data.user_name || '');
+
+    // ── Counters ──────────────────────────────────────────────
+    if (data.total === 0) {
+      // Category has no eligibility requirements — always 100%
+      document.getElementById('elig-counters').textContent =
+        'No eligibility gates defined for this category.';
+    } else {
+      document.getElementById('elig-counters').textContent =
+        data.passed + ' passed · ' + data.failed + ' failed · ' + data.unknown + ' unknown';
+    }
+
+    // ── Detail rows ───────────────────────────────────────────
+    // One row per requirement: ✓/✗/? icon + name + source tag
+    var rowsEl = document.getElementById('elig-rows');
+    rowsEl.innerHTML = '';
+
+    (data.details || []).forEach(function(req) {
+      var row  = document.createElement('div');
+      row.style.cssText = 'display:flex; align-items:flex-start; gap:.5rem; font-size:.85rem; margin-bottom:.4rem;';
+
+      // Status icon — ✓ passed, ✗ failed, ? unknown
+      var icon = document.createElement('span');
+      if (req.passed === true) {
+        icon.textContent  = '✓';
+        icon.style.color  = '#16a34a';
+        icon.style.fontWeight = '700';
+      } else if (req.passed === false) {
+        icon.textContent  = '✗';
+        icon.style.color  = '#dc2626';
+        icon.style.fontWeight = '700';
+      } else {
+        icon.textContent  = '?';
+        icon.style.color  = '#94a3b8';
+      }
+      icon.style.flexShrink = '0';
+      icon.style.marginTop  = '1px';
+
+      // Requirement name
+      var name = document.createElement('span');
+      name.textContent  = req.name;
+      name.style.flex   = '1';
+      name.style.color  = req.passed === null ? '#94a3b8' : '#1e293b';
+
+      // Source pill — (from profile) or (from quiz)
+      var extra = document.createElement('span');
+      if (req.source) {
+        extra.textContent = '(' + req.source + ')';
+        extra.style.cssText = 'color:#94a3b8; white-space:nowrap; font-size:.8rem;';
+      } else if (req.fail_message) {
+        // Fail message shown instead of source for failed reqs
+        extra.textContent = '→ ' + req.fail_message;
+        extra.style.cssText = 'color:#dc2626; white-space:nowrap; font-size:.8rem;';
+      } else if (req.passed === null) {
+        extra.textContent = '(no answer)';
+        extra.style.cssText = 'color:#94a3b8; font-size:.8rem;';
+      }
+
+      row.appendChild(icon);
+      row.appendChild(name);
+      row.appendChild(extra);
+      rowsEl.appendChild(row);
+    });
+
+    // ── Quiz link — only when unknown > 0 ─────────────────────
+    var quizLinkEl   = document.getElementById('elig-quiz-link');
+    var quizAnchorEl = document.getElementById('elig-quiz-anchor');
+    if (data.unknown > 0 && data.quiz_url) {
+      quizAnchorEl.href       = data.quiz_url;
+      quizLinkEl.style.display = '';
+    } else {
+      quizLinkEl.style.display = 'none';
+    }
+
+    // Show result, hide loading
+    setEligLoading(false);
+    document.getElementById('elig-result').style.display = '';
+  }
+
+  // triggerEligibilityCheck — the main entry point, called after debounce
+  function triggerEligibilityCheck() {
+    var email      = document.getElementById('id_user_email').value.trim();
+    var categoryId = document.getElementById('id_final_category').value;
+
+    if (!email || !categoryId) {
+      // Both must be set — hide panel if either is missing
+      hideEligPanel();
+      return;
+    }
+
+    // Show the panel in loading state while we fetch
+    showEligPanel();
+    setEligLoading(true);
+
+    var url = "{% url 'admin_panel:ajax_eligibility_check' %}?user_email=" +
+              encodeURIComponent(email) + '&category_id=' + categoryId;
+
+    fetch(url)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.ok) {
+          setEligError(data.error || 'Could not check eligibility.');
+          return;
+        }
+        renderEligibility(data);
+      })
+      .catch(function() {
+        setEligError('Network error — eligibility check failed.');
+      });
+  }
+
+  // scheduleEligibilityCheck — debounced wrapper (400 ms delay)
+  // WHY debounce: prevents an AJAX call on every keystroke / intermediate
+  // subcategory selection while the user is still navigating the chain.
+  function scheduleEligibilityCheck() {
+    clearTimeout(eligDebounceTimer);
+    eligDebounceTimer = setTimeout(triggerEligibilityCheck, 400);
+  }
+
+  // Hook 1: email field blur — user finished typing
+  document.getElementById('id_user_email').addEventListener('blur', scheduleEligibilityCheck);
+
+  // Hook 2: patch setFinalCategory into the addDropdown select change handler.
+  // We can't easily inject into an already-running addEventListener, so instead
+  // we watch for changes on the HIDDEN field via MutationObserver.
+  // WHY MutationObserver: the hidden input value is set by JS, NOT by user input,
+  // so a plain 'change' event listener on it won't fire in most browsers.
+  var hiddenCatField = document.getElementById('id_final_category');
+  var lastCatValue   = '';
+
+  // Poll the hidden field every 250 ms — lightweight alternative to patching
+  // addDropdown. MutationObserver doesn't observe value changes on inputs.
+  // WHY polling: value= is a JS property change, not a DOM attribute mutation,
+  // so MutationObserver(attributes) also won't catch it. 250 ms is imperceptible.
+  setInterval(function() {
+    var current = hiddenCatField.value;
+    if (current !== lastCatValue) {
+      lastCatValue = current;
+      scheduleEligibilityCheck();
+    }
+  }, 250);
 </script>
 {% endblock %}

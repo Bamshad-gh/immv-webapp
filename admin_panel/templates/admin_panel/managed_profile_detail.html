@@ -1,0 +1,294 @@
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}{{ managed.full_name }} &mdash; Interior Person{% endblock %}
+{% block topbar_title %}Interior Person{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ── Info table: label left, value right ────────────────────── */
+  .info-table td {
+    padding: 0.5rem 0;
+    vertical-align: top;
+    font-size: 0.88rem;
+  }
+  .info-table td:first-child {
+    /* Label cell: fixed width, muted, uppercase */
+    width: 140px;
+    color: var(--slate);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding-right: 1rem;
+    white-space: nowrap;
+  }
+  /* Separator line between rows */
+  .info-table tr + tr td {
+    border-top: 1px solid var(--border);
+  }
+
+  /* ── Photo block ─────────────────────────────────────────────── */
+  .profile-photo {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  .photo-placeholder {
+    width: 80px;
+    height: 80px;
+    background: var(--border);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--slate);
+    font-size: 0.75rem;
+  }
+
+  /* ── Badge helpers ───────────────────────────────────────────── */
+  .linked-badge {
+    display: inline-block;
+    background: var(--amber-light, #f5e6c8);
+    color: var(--navy);
+    font-size: 0.72rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 2px;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+  }
+
+  /* ── Cases table ─────────────────────────────────────────────── */
+  .cases-table td {
+    padding: 0.55rem 0.6rem;
+    border-top: 1px solid var(--border);
+    vertical-align: middle;
+    font-size: 0.85rem;
+  }
+  .cases-table tr:first-child td { border-top: none; }
+  .cases-table thead th {
+    padding: 0.5rem 0.6rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--slate);
+    border-bottom: 2px solid var(--border);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── BREADCRUMB ────────────────────────────────────────────────── #}
+<div class="text-muted text-small mb-2">
+  <a href="{% url 'admin_panel:group_list' %}" style="color:var(--amber);">Groups</a>
+  &rsaquo;
+  <a href="{% url 'admin_panel:group_detail' group.id %}" style="color:var(--amber);">{{ group.name }}</a>
+  &rsaquo; {{ managed.full_name }}
+</div>
+
+{# ── PAGE HEADER ───────────────────────────────────────────────── #}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">
+      {{ managed.full_name }}
+      {# Linked badge — shown when this interior person has a real user account #}
+      {% if managed.linked_user %}
+        <span class="linked-badge" title="Linked to user account">
+          &#10003; {{ managed.linked_user.email }}
+        </span>
+      {% endif %}
+    </h1>
+    <p class="page-subtitle">
+      Interior Person &middot; Group:
+      <a href="{% url 'admin_panel:group_detail' group.id %}"
+         style="color:var(--amber); text-decoration:none;">{{ group.name }}</a>
+      {# created_by is nullable (Phase 3) — group-owned profiles have no specific owner #}
+      &middot; Created by {% if managed.created_by %}{{ managed.created_by.email }}{% else %}group{% endif %}
+    </p>
+  </div>
+
+  {# Action buttons — always visible in the header area #}
+  <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+    <a href="{% url 'admin_panel:admin_create_case_for_managed' group.id managed.id %}"
+       class="btn btn-primary btn-sm">
+      + Assign Case
+    </a>
+    {% if not managed.linked_user %}
+    <a href="{% url 'admin_panel:admin_link_managed_to_user' group.id managed.id %}"
+       class="btn btn-outline btn-sm">
+      Link Account
+    </a>
+    {% endif %}
+    <a href="{% url 'admin_panel:group_detail' group.id %}"
+       class="btn btn-outline btn-sm">
+      Back to Group
+    </a>
+  </div>
+</div>
+
+{# ── INFO BANNER — explains what an interior person is ─────────── #}
+<div class="message" style="margin-bottom:1.25rem; background:var(--amber-light, #fef9ef);
+     border-left:3px solid var(--amber); color:var(--navy); font-size:0.85rem;">
+  This person has no login account. Their cases are filled on their behalf by group members.
+  {% if not managed.linked_user %}
+  Use <strong>Link Account</strong> if they register later — their existing case history will be preserved.
+  {% endif %}
+</div>
+
+{# ── MAIN GRID: personal info left, photo right ────────────────── #}
+<div style="display:grid; grid-template-columns:2fr 1fr; gap:1rem; align-items:start; margin-bottom:1rem;">
+
+  {# ── LEFT: personal info card ─────────────────────────────────── #}
+  <div class="card">
+    <div class="card-header">Personal Information</div>
+    <div style="padding:1rem 1.25rem;">
+      <table class="info-table" style="width:100%; border-collapse:collapse;">
+
+        <tr>
+          <td>First Name</td>
+          <td>{{ managed.first_name|default:"&mdash;" }}</td>
+        </tr>
+        <tr>
+          <td>Last Name</td>
+          <td>{{ managed.last_name|default:"&mdash;" }}</td>
+        </tr>
+        <tr>
+          <td>Date of Birth</td>
+          {# date filter formats as "Jan 01, 1990"; |default handles null/empty #}
+          <td>{{ managed.date_of_birth|date:"M d, Y"|default:"&mdash;" }}</td>
+        </tr>
+        <tr>
+          <td>Gender</td>
+          <td>{{ managed.get_gender_display|default:"&mdash;" }}</td>
+        </tr>
+        <tr>
+          <td>Country of Birth</td>
+          <td>{{ managed.country_of_birth|default:"&mdash;" }}</td>
+        </tr>
+        <tr>
+          <td>City of Birth</td>
+          <td>{{ managed.city_of_birth|default:"&mdash;" }}</td>
+        </tr>
+        <tr>
+          <td>Passport No.</td>
+          <td>{{ managed.passport_number|default:"&mdash;" }}</td>
+        </tr>
+
+      </table>
+    </div>
+  </div>
+
+  {# ── RIGHT: photos + quick group info ─────────────────────────── #}
+  <div>
+
+    {# Profile photo + passport photo cards #}
+    <div class="card" style="margin-bottom:1rem;">
+      <div class="card-header">Photos</div>
+      <div style="padding:1rem; display:flex; gap:1rem; align-items:flex-start;">
+
+        <div style="text-align:center;">
+          {% if managed.profile_picture %}
+            <img src="{{ managed.profile_picture.url }}"
+                 alt="Profile photo" class="profile-photo">
+          {% else %}
+            <div class="photo-placeholder">No photo</div>
+          {% endif %}
+          <p class="text-muted text-small" style="margin-top:0.3rem;">Profile</p>
+        </div>
+
+        <div style="text-align:center;">
+          {% if managed.passport_picture %}
+            <img src="{{ managed.passport_picture.url }}"
+                 alt="Passport scan" class="profile-photo">
+          {% else %}
+            <div class="photo-placeholder">No scan</div>
+          {% endif %}
+          <p class="text-muted text-small" style="margin-top:0.3rem;">Passport</p>
+        </div>
+
+      </div>
+    </div>
+
+    {# Quick group info — group type, linked user status #}
+    <div class="card">
+      <div class="card-header">Status</div>
+      <table class="info-table" style="width:100%; border-collapse:collapse; padding:0 1.25rem;">
+        <tr>
+          <td style="padding-left:1.25rem;">Group</td>
+          <td style="padding-left:0;">{{ group.name }}</td>
+        </tr>
+        <tr>
+          <td style="padding-left:1.25rem;">Linked Account</td>
+          <td style="padding-left:0;">
+            {% if managed.linked_user %}
+              <span style="color:var(--success, #2d8a4e);">&#10003; {{ managed.linked_user.email }}</span>
+            {% else %}
+              <span class="text-muted">Not linked</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-left:1.25rem;">Cases</td>
+          <td style="padding-left:0;">{{ cases|length }}</td>
+        </tr>
+      </table>
+    </div>
+
+  </div>{# /right column #}
+
+</div>{# /main grid #}
+
+
+{# ── CASES TABLE ───────────────────────────────────────────────── #}
+<div class="card">
+  <div class="card-header flex-between">
+    <span>Cases</span>
+    {# Quick shortcut to assign another case without scrolling up #}
+    <a href="{% url 'admin_panel:admin_create_case_for_managed' group.id managed.id %}"
+       class="btn btn-sm btn-outline">+ Assign Case</a>
+  </div>
+
+  {% if cases %}
+  <table class="cases-table" style="width:100%; border-collapse:collapse;">
+    <thead>
+      <tr>
+        <th style="width:55px;">ID</th>
+        <th>Category</th>
+        <th style="width:110px;">Status</th>
+        <th style="width:120px;">Created</th>
+        <th style="width:60px; text-align:right;">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for case in cases %}
+      <tr>
+        <td class="text-muted">#{{ case.id }}</td>
+        <td>{{ case.category.name }}</td>
+        <td>
+          {# badge-<status> class — matches the CSS badge system in base_admin.html #}
+          <span class="badge badge-{{ case.status }}">{{ case.get_status_display }}</span>
+        </td>
+        <td class="text-muted">{{ case.created_at|date:"M d, Y" }}</td>
+        <td style="text-align:right;">
+          <a href="{% url 'admin_panel:case_detail' case.id %}"
+             class="btn btn-sm btn-outline">View</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% else %}
+  {# Empty state — shown when no cases have been assigned yet #}
+  <div style="padding:2rem 1.5rem; text-align:center; color:var(--slate); font-style:italic;">
+    No cases assigned yet.
+    <a href="{% url 'admin_panel:admin_create_case_for_managed' group.id managed.id %}"
+       style="color:var(--amber);">Assign one &rarr;</a>
+  </div>
+  {% endif %}
+
+</div>{# /cases card #}
+
+{% endblock %}

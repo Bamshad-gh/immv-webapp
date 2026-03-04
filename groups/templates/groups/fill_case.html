@@ -30,29 +30,76 @@ EXPAND: add a sidebar showing the managed profile's info.
   <div class="card">
     <form method="POST" enctype="multipart/form-data">
       {% csrf_token %}
-  {% for field in form %}
-    <div class="form-group">
-      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-      {{ field }}
-      {% if field.help_text %}
-        <p class="text-muted text-small mt-1">{{ field.help_text }}</p>
+      {% for field in form %}
+        <!--
+          data-field-name allows the auto-fill JS below to find this wrapper.
+          Shared pattern with cases/user_pickedCases_detail.html.
+        -->
+        <div class="form-group req-field-wrapper" data-field-name="{{ field.html_name }}">
+          <label for="{{ field.id_for_label }}">
+            {{ field.label }}
+            <span class="auto-fill-badge" style="display:none;" title="Pre-filled from a previous application.">
+              Auto-filled ✓
+            </span>
+          </label>
+          {{ field }}
+          {% if field.help_text %}
+            <p class="text-muted text-small mt-1">{{ field.help_text }}</p>
+          {% endif %}
+          {{ field.errors }}
+        </div>
+      {% endfor %}
+
+      {% if form.non_field_errors %}
+        <div class="message message-error" style="margin-bottom:1rem;">
+          {{ form.non_field_errors }}
+        </div>
       {% endif %}
-      {{ field.errors }}
-    </div>
-  {% endfor %}
 
-  {% if form.non_field_errors %}
-    <div class="message message-error" style="margin-bottom:1rem;">
-      {{ form.non_field_errors }}
-    </div>
-  {% endif %}
-
-  <div class="divider"></div>
-  <div class="flex-between">
-    <a href="{% url 'groups:group_detail' group.id %}" class="btn btn-outline">← Back to Group</a>
-    <button type="submit" class="btn btn-primary">Save Answers</button>
-  </div>
-</form>
+      <div class="divider"></div>
+      <div class="flex-between">
+        <a href="{% url 'groups:group_detail' group.id %}" class="btn btn-outline">← Back to Group</a>
+        <button type="submit" class="btn btn-primary">Save Answers</button>
+      </div>
+    </form>
   </div>
 </div>
+
+{% block extra_js %}
+<style>
+  /* Auto-fill badge — same style as cases/user_pickedCases_detail.html */
+  .req-field-wrapper.auto-filled input,
+  .req-field-wrapper.auto-filled select,
+  .req-field-wrapper.auto-filled textarea {
+    border-color: var(--amber);
+    background-color: #fffbf0;
+  }
+  .auto-fill-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    color: var(--amber);
+    font-style: italic;
+    font-weight: 400;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+  }
+</style>
+<script>
+/* Phase 2 — auto-fill badge rendering. See cases/user_pickedCases_detail.html for explanation. */
+(function () {
+  var autoFilledFields = new Set([
+    {% for field_name in auto_filled_fields %}
+      "{{ field_name }}"{% if not forloop.last %},{% endif %}
+    {% endfor %}
+  ]);
+  if (autoFilledFields.size === 0) return;
+  document.querySelectorAll('.req-field-wrapper[data-field-name]').forEach(function (wrapper) {
+    if (!autoFilledFields.has(wrapper.getAttribute('data-field-name'))) return;
+    wrapper.classList.add('auto-filled');
+    var badge = wrapper.querySelector('.auto-fill-badge');
+    if (badge) badge.style.display = 'inline-block';
+  });
+}());
+</script>
+{% endblock %}
 {% endblock %}

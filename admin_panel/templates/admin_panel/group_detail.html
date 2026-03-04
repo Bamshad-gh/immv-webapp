@@ -1,13 +1,48 @@
-
-
-<!-- ============================================================
-FILE: admin_panel/templates/admin_panel/group_detail.html
-UPDATED — added inline role dropdown per member row.
-Replace your existing group_detail.html with this.
-============================================================ -->
 {% extends "admin_panel/base_admin.html" %}
 {% block title %}{{ group.name }}{% endblock %}
 {% block topbar_title %}Group Detail{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* Person block — each member / managed profile sits in its own padded row */
+  .person-block {
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .person-block:last-child { border-bottom: none; }
+
+  /* Header row: name + status left, action buttons right */
+  .person-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+  }
+
+  /* Cases sub-table — displayed below the person header */
+  .cases-sub { margin-top: 0.5rem; font-size: 0.82rem; }
+  .cases-sub table { width: 100%; }
+  .cases-sub td {
+    padding: 0.25rem 0.4rem;
+    vertical-align: middle;
+    border-top: 1px solid var(--border);
+  }
+  .cases-sub tr:first-child td { border-top: none; }
+
+  /* Badge shown when a managed profile is linked to a real user account */
+  .linked-badge {
+    display: inline-block;
+    background: var(--amber-light, #f5e6c8);
+    color: var(--navy);
+    font-size: 0.72rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 2px;
+    margin-left: 0.4rem;
+    vertical-align: middle;
+  }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -15,45 +50,61 @@ Replace your existing group_detail.html with this.
     <h1 class="page-title">{{ group.name }}</h1>
     <p class="page-subtitle">
       <span class="badge badge-neutral">{{ group.type }}</span>
-      {% if group.type == "family" and group.family_info %}
-        · {{ group.family_info.family_name }}
-      {% elif group.type == "business" and group.business_info %}
-        · {{ group.business_info.company_name }}
-      {% endif %}
-      · Created {{ group.created_at|date:"M d, Y" }}
+      {% if group.type == "family" and group.family_info %}&middot; {{ group.family_info.family_name }}{% endif %}
+      {% if group.type == "business" and group.business_info %}&middot; {{ group.business_info.company_name }}{% endif %}
+      &middot; Created {{ group.created_at|date:"M d, Y" }}
     </p>
   </div>
+  <!-- Bulk assign — creates one case per member + per managed profile with the chosen category -->
+  <a href="{% url 'admin_panel:admin_assign_category_to_group' group.id %}"
+     class="btn btn-primary btn-sm">
+    Assign Category to All
+  </a>
 </div>
 
 <div style="display:grid; grid-template-columns:2fr 1fr; gap:1rem; align-items:start;">
 
-  <!-- Left — Members table -->
+  <!-- ══ LEFT: members + interior persons ══════════════════════ -->
   <div>
-    <div class="card">
+
+    <!-- ── Members ──────────────────────────────────────────────
+       Each member shows their cases inline.
+       Admin can assign a new case, change role, set permissions, or suspend. -->
+    <div class="card" style="margin-bottom:1rem;">
       <div class="card-header flex-between">
         <span>Members</span>
         <span class="text-muted text-small">
-          {{ memberships|length }} member{{ memberships|length|pluralize }}
+          {{ members_with_cases|length }} member{{ members_with_cases|length|pluralize }}
         </span>
       </div>
 
-      {% if memberships %}
-        {% for m in memberships %}
-          <div style="padding:1rem 0; border-bottom:1px solid var(--border);">
+      {% for m, member_cases in members_with_cases %}
+      <div class="person-block" style="padding-left:0; padding-right:0;">
+        <div style="padding:0 1rem;">
 
-            <!-- Member header row -->
-            <div class="flex-between" style="margin-bottom:0.75rem;">
-              <div class="flex-center">
-                <a href="{% url 'admin_panel:admin_view_user' m.user.id %}"
-                   style="font-weight:500; color:var(--amber); text-decoration:none;">
-                  {{ m.user.email }}
-                </a>
-                {% if not m.is_active %}
-                  <span class="badge badge-rejected">suspended</span>
-                {% endif %}
+          <!--Header: email + status badge + assign-case + suspend buttons-->
+          <div class="person-header">
+            <div>
+              <a href="{% url 'admin_panel:admin_view_user' m.user.id %}"
+                 style="font-weight:500; color:var(--amber); text-decoration:none;">
+                {{ m.user.email }}
+              </a>
+              {% if not m.is_active %}
+                <span class="badge badge-rejected" style="margin-left:0.4rem;">suspended</span>
+              {% endif %}
+              <div class="text-muted" style="font-size:0.78rem; margin-top:0.15rem;">
+                Role: {{ m.role.name|default:"&mdash;" }}
+                &middot; Joined {{ m.joined_at|date:"M d, Y" }}
               </div>
+            </div>
 
-              <!-- Suspend / Restore -->
+            <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center;">
+              <!-- Assign Case — admin picks a category and creates a case for this member -->
+              <a href="{% url 'admin_panel:admin_assign_case_to_member' group.id m.id %}"
+                 class="btn btn-sm btn-outline" style="white-space:nowrap;">
+                + Assign Case
+              </a>
+              <!-- Suspend / Restore toggle -->
               <form method="POST"
                     action="{% url 'admin_panel:admin_toggle_member' group.id m.id %}"
                     style="display:inline;">
@@ -65,67 +116,171 @@ Replace your existing group_detail.html with this.
                 {% endif %}
               </form>
             </div>
-
-            <!-- Inline role change dropdown -->
-            <form method="POST"
-                  action="{% url 'admin_panel:admin_change_member_role' group.id m.id %}"
-                  style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.75rem;">
-              {% csrf_token %}
-              <label style="font-size:0.75rem; font-weight:600; letter-spacing:0.04em;
-                             text-transform:uppercase; color:var(--slate); white-space:nowrap; margin:0;">
-                Role
-              </label>
-              <select name="role_id" style="flex:1; padding:0.35rem 0.6rem; font-size:0.85rem;">
-                <option value="">No role</option>
-                {% for role in roles %}
-                  <option value="{{ role.id }}"
-                    {% if m.role and m.role.id == role.id %}selected{% endif %}>
-                    {{ role.name }}
-                  </option>
-                {% endfor %}
-              </select>
-              <button type="submit" class="btn btn-sm btn-outline">Set</button>
-            </form>
-
-            <!-- Permission checkboxes -->
-            <form method="POST"
-                  action="{% url 'admin_panel:admin_set_member_permissions' group.id m.id %}"
-                  style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
-              {% csrf_token %}
-              {% for perm in all_permissions %}
-                <label style="display:flex; align-items:center; gap:0.35rem;
-                               font-size:0.8rem; text-transform:none;
-                               letter-spacing:0; font-weight:400;
-                               color:var(--navy); cursor:pointer;">
-                  <input type="checkbox"
-                         name="permissions"
-                         value="{{ perm.id }}"
-                         style="width:auto;"
-                         {% if perm in m.permissions.all %}checked{% endif %}>
-                  {{ perm.name }}
-                </label>
-              {% endfor %}
-              <button type="submit" class="btn btn-sm btn-outline">Save Permissions</button>
-            </form>
-
-            <p class="text-muted text-small mt-1">
-              Joined {{ m.joined_at|date:"M d, Y" }}
-            </p>
           </div>
-        {% endfor %}
-      {% else %}
-        <div class="empty-state" style="padding:2rem 1rem;">
-          <p class="empty-state-title">No members yet</p>
-          <p class="text-muted">Add a member using the form on the right.</p>
-        </div>
-      {% endif %}
-    </div>
-  </div>
 
-  <!-- Right column -->
+          <!-- Inline role change dropdown -->
+          <form method="POST"
+                action="{% url 'admin_panel:admin_change_member_role' group.id m.id %}"
+                style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.6rem;">
+            {% csrf_token %}
+            <label style="font-size:0.72rem; font-weight:600; letter-spacing:0.04em;
+                           text-transform:uppercase; color:var(--slate); margin:0; white-space:nowrap;">
+              Role
+            </label>
+            <select name="role_id" style="flex:1; padding:0.3rem 0.5rem; font-size:0.82rem;">
+              <option value="">No role</option>
+              {% for role in roles %}
+                <option value="{{ role.id }}"
+                  {% if m.role and m.role.id == role.id %}selected{% endif %}>
+                  {{ role.name }}
+                </option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-sm btn-outline">Set</button>
+          </form>
+
+          <!-- Permission checkboxes -->
+          <form method="POST"
+                action="{% url 'admin_panel:admin_set_member_permissions' group.id m.id %}"
+                style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; margin-bottom:0.6rem;">
+            {% csrf_token %}
+            {% for perm in all_permissions %}
+              <label style="display:flex; align-items:center; gap:0.3rem;
+                             font-size:0.78rem; font-weight:400; color:var(--navy); cursor:pointer;">
+                <input type="checkbox" name="permissions" value="{{ perm.id }}"
+                       style="width:auto;"
+                       {% if perm in m.permissions.all %}checked{% endif %}>
+                {{ perm.name }}
+              </label>
+            {% endfor %}
+            <button type="submit" class="btn btn-sm btn-outline">Save Permissions</button>
+          </form>
+
+          <!--Cases sub-table — all cases this member has in this group-->
+          {% if member_cases %}
+          <div class="cases-sub">
+            <table>
+              {% for case in member_cases %}
+              <tr>
+                <td class="text-muted" style="width:55px;">#{{ case.id }}</td>
+                <td>{{ case.category.name }}</td>
+                <td style="width:90px;">
+                  <span class="badge badge-{{ case.status }}">{{ case.get_status_display }}</span>
+                </td>
+                <td class="text-right" style="width:60px;">
+                  <a href="{% url 'admin_panel:case_detail' case.id %}"
+                     class="btn btn-sm btn-outline">View</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </table>
+          </div>
+          {% else %}
+          <p class="text-muted" style="font-size:0.8rem; font-style:italic; margin:0;">
+            No cases assigned yet.
+          </p>
+          {% endif %}
+
+        </div><!-- /inner padding -->
+      </div><!-- /person-block -->
+      {% empty %}
+      <div style="padding:1.5rem 1rem; color:var(--slate); font-style:italic;">
+        No members yet. Add one using the form on the right.
+      </div>
+      {% endfor %}
+    </div><!-- /Members card -->
+
+
+    <!-- ── Interior Persons (Managed Profiles) ──────────────────
+       No-account people managed by the group leader.
+       Admin can assign cases and link them to a user account. -->
+    <div class="card">
+      <div class="card-header flex-between">
+        <span>Interior Persons</span>
+        <span class="text-muted text-small">
+          {{ managed_with_cases|length }} person{{ managed_with_cases|length|pluralize }}
+        </span>
+      </div>
+
+      {% for mp, mp_cases in managed_with_cases %}
+      <div class="person-block" style="padding-left:0; padding-right:0;">
+        <div style="padding:0 1rem;">
+
+          <div class="person-header">
+            <div>
+              {# Link to managed profile detail page (Phase 3) #}
+              <a href="{% url 'admin_panel:admin_managed_profile_detail' group.id mp.id %}"
+                 style="font-weight:500; color:var(--amber); text-decoration:none;">
+                {{ mp.full_name }}
+              </a>
+              {% if mp.linked_user %}
+                <!-- Linked badge — profile is connected to a real user account -->
+                <span class="linked-badge" title="Linked to a user account">
+                  &#10003; {{ mp.linked_user.email }}
+                </span>
+              {% endif %}
+              <div class="text-muted" style="font-size:0.78rem; margin-top:0.15rem;">
+                {# created_by is nullable since Phase 3 — group-owned profiles have no specific owner #}
+                Managed by {% if mp.created_by %}{{ mp.created_by.email }}{% else %}group{% endif %}
+              </div>
+            </div>
+
+            <div style="display:flex; gap:0.4rem; flex-wrap:wrap; align-items:center;">
+              <a href="{% url 'admin_panel:admin_create_case_for_managed' group.id mp.id %}"
+                 class="btn btn-sm btn-outline" style="white-space:nowrap;">
+                + Assign Case
+              </a>
+              <!-- Link Account — only shown when not yet linked -->
+              {% if not mp.linked_user %}
+              <a href="{% url 'admin_panel:admin_link_managed_to_user' group.id mp.id %}"
+                 class="btn btn-sm btn-outline" style="white-space:nowrap;">
+                Link Account
+              </a>
+              {% endif %}
+            </div>
+          </div>
+
+          {% if mp_cases %}
+          <div class="cases-sub">
+            <table>
+              {% for case in mp_cases %}
+              <tr>
+                <td class="text-muted" style="width:55px;">#{{ case.id }}</td>
+                <td>{{ case.category.name }}</td>
+                <td style="width:90px;">
+                  <span class="badge badge-{{ case.status }}">{{ case.get_status_display }}</span>
+                </td>
+                <td class="text-right" style="width:60px;">
+                  <a href="{% url 'admin_panel:case_detail' case.id %}"
+                     class="btn btn-sm btn-outline">View</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </table>
+          </div>
+          {% else %}
+          <p class="text-muted" style="font-size:0.8rem; font-style:italic; margin:0;">
+            No cases assigned yet.
+          </p>
+          {% endif %}
+
+        </div>
+      </div>
+      {% empty %}
+      <div style="padding:1.5rem 1rem; color:var(--slate); font-style:italic;">
+        No interior persons yet.
+        <a href="{% url 'admin_panel:admin_create_managed_profile' group.id %}"
+           style="color:var(--amber);">Add one &rarr;</a>
+      </div>
+      {% endfor %}
+    </div><!-- /Interior Persons card -->
+
+  </div><!-- /left column -->
+
+
+  <!-- ══ RIGHT: add-member form + add-person link + group info ═ -->
   <div>
 
-    <!-- Add Member -->
     <div class="card">
       <div class="card-header">Add Member</div>
       <form method="POST" action="{% url 'admin_panel:admin_add_member' group.id %}">
@@ -143,14 +298,26 @@ Replace your existing group_detail.html with this.
             {% endfor %}
           </select>
         </div>
-        <button type="submit" class="btn btn-primary"
-                style="width:100%; justify-content:center;">
+        <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">
           Add Member
         </button>
       </form>
     </div>
 
-    <!-- Group Info -->
+    <div class="card" style="margin-top:1rem;">
+      <div class="card-header">Add Interior Person</div>
+      <div style="padding:1rem;">
+        <p class="text-muted" style="font-size:0.82rem; margin-bottom:0.75rem;">
+          Create a profile for someone without a user account.
+          You can link them to an account later.
+        </p>
+        <a href="{% url 'admin_panel:admin_create_managed_profile' group.id %}"
+           class="btn btn-outline" style="width:100%; justify-content:center;">
+          + Add Interior Person
+        </a>
+      </div>
+    </div>
+
     <div class="card" style="margin-top:1rem;">
       <div class="card-header">Group Info</div>
       <table style="font-size:0.85rem;">
@@ -159,7 +326,7 @@ Replace your existing group_detail.html with this.
           <td style="padding:0.4rem 0;">
             <a href="{% url 'admin_panel:admin_view_user' group.created_by.id %}"
                style="color:var(--amber); text-decoration:none;">
-              {{ group.created_by.email|default:"—" }}
+              {{ group.created_by.email|default:"&mdash;" }}
             </a>
           </td>
         </tr>
@@ -190,19 +357,6 @@ Replace your existing group_detail.html with this.
       </table>
     </div>
 
-    <!-- Managed Profiles -->
-    {% if managed_profiles %}
-    <div class="card" style="margin-top:1rem;">
-      <div class="card-header">Interior Persons</div>
-      {% for profile in managed_profiles %}
-        <div style="padding:0.6rem 0; border-bottom:1px solid var(--border);">
-          <div style="font-weight:500; font-size:0.9rem;">{{ profile.full_name }}</div>
-          <div class="text-muted text-small">by {{ profile.created_by.email }}</div>
-        </div>
-      {% endfor %}
-    </div>
-    {% endif %}
-
-  </div>
-</div>
+  </div><!-- /right column -->
+</div><!-- /grid -->
 {% endblock %}

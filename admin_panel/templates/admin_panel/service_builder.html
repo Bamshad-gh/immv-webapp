@@ -6,8 +6,7 @@
 <style>
   /*
    * Three-panel layout — reveals left to right as admin drills deeper.
-   * Each panel scrolls independently.
-   * CUSTOMIZE: change --panel-width to adjust column sizes.
+   * CUSTOMIZE: adjust grid-template-columns to resize panels.
    */
   .builder-wrap {
     display: grid;
@@ -86,6 +85,7 @@
   .inline-form textarea:focus { border-color: var(--amber); }
 
   .inline-form textarea { resize: vertical; min-height: 60px; }
+  .inline-form label    { font-size: 0.8rem; }
 
   .inline-form-actions {
     display: flex;
@@ -128,7 +128,7 @@
 
   .inline-error.show { display: block; }
 
-  /* ── Empty state inside panel ── */
+  /* ── Empty state ── */
   .panel-empty {
     padding: 2rem 1rem;
     text-align: center;
@@ -136,7 +136,7 @@
     font-size: 0.875rem;
   }
 
-  /* ── Add button in panel header ── */
+  /* ── Small add button in panel header ── */
   .btn-add {
     font-size: 0.75rem;
     padding: 0.25rem 0.6rem;
@@ -152,20 +152,20 @@
     border-color: var(--amber);
     color: var(--amber);
   }
-  
-  /* ── Delete btn ── */
-  .btn-delete {
-  background: transparent;
-  border: none;
-  color: var(--danger);
-  cursor: pointer;
-  font-size: 0.75rem;
-  padding: 0.2rem 0.35rem;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
 
-.panel-item:hover .btn-delete { opacity: 1; }
+  /* ── Delete/Remove btn on hover ── */
+  .btn-delete {
+    background: transparent;
+    border: none;
+    color: var(--danger);
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.35rem;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .panel-item:hover .btn-delete { opacity: 1; }
 
   /* ── Type badge ── */
   .type-badge {
@@ -190,6 +190,280 @@
     color: var(--slate);
     min-height: 2.2rem;
   }
+
+  /* ── Phase 1: Tab bar (right panel) ─────────────────────────── */
+  /*
+   * Three tabs on the right panel:
+   *   "This Category" — requirements assigned to the selected category
+   *   "Add from Library" — browse the library and link to this category
+   *   "Create New" — create a brand new requirement + add to this category
+   */
+  .req-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--cream);
+  }
+
+  .req-tab {
+    flex: 1;
+    padding: 0.55rem 0.5rem;
+    text-align: center;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--slate);
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+    font-family: var(--font-sans);
+  }
+
+  .req-tab:hover { color: var(--navy); }
+
+  .req-tab.active {
+    color: var(--amber);
+    border-bottom-color: var(--amber);
+    background: var(--white);
+  }
+
+  .req-tab-content { display: none; }
+  .req-tab-content.active { display: block; }
+
+  /* ── Choices panel (inside req-row for select-type requirements) ── */
+  /*
+   * Appears below a select-type requirement when "Choices" button is clicked.
+   * Shows the list of dropdown options with add/edit/delete controls.
+   */
+  .choices-panel {
+    display: none;
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: var(--cream);
+    border: 1px solid var(--border);
+    font-size: 0.8rem;
+  }
+
+  .choices-panel.open { display: block; }
+
+  .choice-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .choice-row:last-of-type { border-bottom: none; }
+
+  .choice-label { flex: 1; font-weight: 500; }
+  .choice-value { flex: 1; color: var(--slate); font-size: 0.75rem; }
+
+  /* ── Library browser (Add from Library tab) ── */
+  .lib-filters {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--cream);
+  }
+
+  .lib-filters select,
+  .lib-filters input {
+    flex: 1;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.8rem;
+    border: 1px solid var(--border);
+    background: var(--white);
+    font-family: var(--font-sans);
+    outline: none;
+  }
+
+  .lib-filters select:focus,
+  .lib-filters input:focus { border-color: var(--amber); }
+
+  .lib-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.8rem;
+  }
+
+  .lib-item-info { flex: 1; }
+  .lib-item-name { font-weight: 500; }
+  .lib-item-meta { color: var(--slate); font-size: 0.72rem; }
+
+  .lib-section-header {
+    padding: 0.4rem 0.75rem;
+    background: var(--cream);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--slate);
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Phase 4: Forms Library ─────────────────────────────── */
+
+  /* Collapsible header separating Services from Forms Library in Panel 1 */
+  .panel-section-header {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--slate);
+    border-top: 2px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    background: var(--cream);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+  }
+  .panel-section-header:hover { background: #ede8e0; }
+
+  /* Form list items — same visual pattern as service/category items */
+  .form-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 0.83rem;
+    transition: background 0.1s;
+  }
+  .form-item:hover    { background: var(--cream); }
+  .form-item.selected { background: var(--amber-light, #fef9ef); }
+  .form-item-name { font-weight: 500; }
+  .form-item-meta { color: var(--slate); font-size: 0.72rem; }
+
+  /* Full-width search input inside a panel (no side padding — sits flush) */
+  .panel-search {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.82rem;
+    font-family: var(--font-sans);
+    outline: none;
+    background: var(--white, #fff);
+    box-sizing: border-box;
+  }
+  .panel-search:focus { border-bottom-color: var(--amber); }
+
+  /* Form detail header — shown at top of Panel 3 when a form is selected */
+  .form-detail-header {
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--cream);
+  }
+  .form-detail-title { font-size: 1rem; font-weight: 600; color: var(--navy); }
+  .form-detail-meta  { font-size: 0.75rem; color: var(--slate); margin-top: 0.2rem; }
+
+  /* Collapsible eligibility section at the bottom of the requirement edit form */
+  .eligibility-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--navy);
+    cursor: pointer;
+    padding: 0.4rem 0;
+    border-top: 1px solid var(--border);
+    margin-top: 0.5rem;
+    user-select: none;
+  }
+  .eligibility-fields {
+    display: none;
+    background: var(--cream);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.75rem;
+    margin-top: 0.4rem;
+    font-size: 0.8rem;
+  }
+  .eligibility-fields.open { display: block; }
+  .eligibility-fields select,
+  .eligibility-fields input { margin-bottom: 0.45rem; }
+
+  /* Eligibility gate badge on requirement rows (⚑ eligibility) */
+  .elig-badge {
+    display: inline-block;
+    background: #fff4e5;
+    color: #a05500;
+    border: 1px solid #f5c68a;
+    border-radius: 3px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0 0.3em;
+    margin-left: 0.25em;
+    vertical-align: middle;
+    letter-spacing: 0.03em;
+  }
+
+  /* Small badge on the "Forms" tab showing linked form count */
+  .tab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--amber);
+    color: #fff;
+    border-radius: 999px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    min-width: 1.15em;
+    height: 1.15em;
+    padding: 0 0.3em;
+    margin-left: 0.25em;
+    vertical-align: middle;
+  }
+
+  /* Modal overlay — covers full viewport with a dark semi-transparent backdrop */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+  }
+  /* WHY flex on .open rather than display:flex by default:
+     display:none is the off state; adding .open switches to flex so the
+     box is centred without extra wrapper divs. */
+  .modal-overlay.open { display: flex; }
+
+  .modal-box {
+    background: #fff;
+    border-radius: 6px;
+    padding: 1.5rem;
+    width: 500px;
+    max-width: 95vw;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+  }
+  .modal-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--navy);
+    margin-bottom: 0.75rem;
+  }
+  /* Inputs inside modals — same width as the box */
+  .modal-box input[type="text"],
+  .modal-box input[type="url"],
+  .modal-box textarea {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 0.5rem;
+  }
 </style>
 {% endblock %}
 
@@ -198,7 +472,8 @@
   <div>
     <h1 class="page-title">Service Builder</h1>
     <p class="page-subtitle">
-      Select a service, drill into categories, manage requirements.
+      Build services from reusable requirement sections. Link requirements from
+      the library — or create new ones directly.
     </p>
   </div>
   <a href="{% url 'admin_panel:service_list' %}" class="btn btn-outline">
@@ -208,32 +483,83 @@
 
 <div class="builder-wrap">
 
-  <!-- ── PANEL 1: Services ───────────────────────────── -->
+  <!-- ── PANEL 1: Services ─────────────────────────────── -->
   <div class="builder-panel" id="panel-services">
     <div class="panel-header">
       Services
       <button class="btn-add" onclick="toggleForm('form-new-service')">+ New</button>
     </div>
 
-    <!-- Inline create service form -->
     <div class="inline-form" id="form-new-service">
       <div class="inline-error" id="err-service-name"></div>
-      <input type="text" id="new-service-name" placeholder="Service name">
+      <input type="text"  id="new-service-name" placeholder="Service name">
       <textarea id="new-service-desc" placeholder="Description (optional)" rows="2"></textarea>
       <div class="inline-form-actions">
         <button class="btn btn-sm btn-primary" onclick="createService()">Create</button>
-        <button class="btn btn-sm btn-outline"
-                onclick="toggleForm('form-new-service')">Cancel</button>
+        <button class="btn btn-sm btn-outline" onclick="toggleForm('form-new-service')">Cancel</button>
       </div>
     </div>
 
-    <!-- Service list — populated by JS -->
     <div id="service-list">
       <div class="panel-empty">Loading...</div>
     </div>
-  </div>
 
-  <!-- ── PANEL 2: Category Chain ─────────────────────── -->
+    <!-- ── Phase 4: Forms Library ─────────────────────── -->
+    <!--
+      Collapsible section below Services in the same panel.
+      WHY same panel: Forms and Services are both "library" objects — putting
+      them together keeps Panel 1 as the "What exists?" panel.
+      Click the header to collapse/expand via toggleFormsSection().
+    -->
+    <div class="panel-section-header" onclick="toggleFormsSection()">
+      <span>Forms Library</span>
+      <span id="forms-section-arrow">▾</span>
+    </div>
+
+    <div id="forms-library-section">
+
+      <!-- Inline "New Form" creation form — hidden by default.
+           Shown when admin clicks "+ New Form" at the bottom.      -->
+      <div class="inline-form" id="form-new-form">
+        <div class="inline-error" id="err-form-name"></div>
+        <!-- code: short unique identifier, e.g. IMM5710.
+             Used as prefix in form_field_id: 'IMM5710__Section2_gender'. -->
+        <input type="text" id="new-form-code"       placeholder="Form code (e.g. IMM5710)">
+        <!-- name: full official form name shown to admins -->
+        <input type="text" id="new-form-name-input" placeholder="Full name (e.g. Application to Change Conditions)">
+        <textarea         id="new-form-desc" rows="2" placeholder="Description (optional)"></textarea>
+        <!-- source_url: government page — seed for the future web crawler -->
+        <input type="url"  id="new-form-url"        placeholder="Source URL (optional)">
+        <div class="inline-form-actions">
+          <button class="btn btn-sm btn-primary" onclick="createForm()">Create</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleForm('form-new-form')">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Search — filters form list as admin types, calls loadForms() on input -->
+      <input type="text" class="panel-search" id="form-search"
+             placeholder="&#128269; Search forms..."
+             oninput="loadForms()">
+
+      <!-- Form list populated by renderFormList() -->
+      <div id="form-list">
+        <div class="panel-empty">Loading...</div>
+      </div>
+
+      <!-- Sticky "+ New Form" button at bottom of list -->
+      <div style="padding:0.5rem 0.75rem; border-top:1px solid var(--border);">
+        <button class="btn btn-sm btn-outline"
+                style="width:100%; justify-content:center;"
+                onclick="toggleForm('form-new-form')">
+          + New Form
+        </button>
+      </div>
+
+    </div><!-- /forms-library-section -->
+
+  </div><!-- /panel-services -->
+
+  <!-- ── PANEL 2: Category Chain ───────────────────────── -->
   <div class="builder-panel" id="panel-categories">
     <div class="panel-header">
       <span id="panel2-title">Categories</span>
@@ -245,24 +571,18 @@
       </button>
     </div>
 
-    <!-- Breadcrumb trail showing current selection path -->
     <div class="chain-header" id="category-breadcrumb" style="display:none;"></div>
 
-    <!-- Inline create category form -->
     <div class="inline-form" id="form-new-category">
       <div class="inline-error" id="err-category-name"></div>
-      <input type="text" id="new-category-name" placeholder="Category name">
-      <textarea id="new-category-desc"
-                placeholder="Description (optional)"
-                rows="2"></textarea>
+      <input type="text"  id="new-category-name" placeholder="Category name">
+      <textarea id="new-category-desc" placeholder="Description (optional)" rows="2"></textarea>
       <div class="inline-form-actions">
         <button class="btn btn-sm btn-primary" onclick="createCategory()">Create</button>
-        <button class="btn btn-sm btn-outline"
-                onclick="toggleForm('form-new-category')">Cancel</button>
+        <button class="btn btn-sm btn-outline" onclick="toggleForm('form-new-category')">Cancel</button>
       </div>
     </div>
 
-    <!-- Category chain — populated by JS level by level -->
     <div id="category-chain-container">
       <div class="panel-empty" id="categories-empty">
         Select a service to view its categories.
@@ -270,81 +590,372 @@
     </div>
   </div>
 
-  <!-- ── PANEL 3: Requirements ────────────────────────── -->
+  <!-- ── PANEL 3: Requirements ─────────────────────────── -->
   <div class="builder-panel" id="panel-requirements">
     <div class="panel-header">
       <span id="panel3-title">Requirements</span>
-      <button class="btn-add"
-              id="btn-add-requirement"
-              style="display:none;"
-              onclick="toggleForm('form-new-requirement')">
-        + Add
-      </button>
     </div>
 
-    <!-- Inline create requirement form -->
-    <div class="inline-form" id="form-new-requirement">
-      <div class="inline-error" id="err-req-name"></div>
-      <input type="text" id="new-req-name" placeholder="Requirement name">
-      <select id="new-req-type">
-        <option value="">Select type...</option>
-        <option value="text">Text</option>
-        <option value="question">Question</option>
-        <option value="number">Number</option>
-        <option value="date">Date</option>
-        <option value="document">Document Upload</option>
-      </select>
-      <textarea id="new-req-desc"
-                placeholder="Description shown to user (optional)"
-                rows="2"></textarea>
-      <label style="display:flex; align-items:center; gap:0.4rem;
-                     font-size:0.8rem; margin-bottom:0.5rem; cursor:pointer;">
-        <input type="checkbox" id="new-req-required" checked
-               style="width:auto; margin:0;">
-        Required
-      </label>
-      <div class="inline-form-actions">
-        <button class="btn btn-sm btn-primary" onclick="createRequirement()">Add</button>
-        <button class="btn btn-sm btn-outline"
-                onclick="toggleForm('form-new-requirement')">Cancel</button>
+    <!--
+      Three tabs — only visible once a category is selected.
+      Tab 1: Requirements linked to this category
+      Tab 2: Browse library to add existing requirements
+      Tab 3: Create a brand-new requirement (added to library + this category)
+    -->
+    <div id="req-tab-bar" style="display:none;">
+      <div class="req-tabs">
+        <button class="req-tab active" onclick="switchTab('this')">This Category</button>
+        <!--
+          Phase 4 "Forms" tab — shows GovernmentForms linked to this category.
+          The badge (.tab-badge) displays the linked-form count; hidden when 0.
+          WHY between "This Category" and "+ From Library":
+            Forms are category-level metadata (like requirements) so they live
+            right next to "This Category". The add/import tabs follow logically.
+        -->
+        <button class="req-tab" onclick="switchTab('forms')">
+          Forms
+          <span class="tab-badge" id="forms-tab-badge" style="display:none;">0</span>
+        </button>
+        <button class="req-tab"        onclick="switchTab('library')">+ From Library</button>
+        <button class="req-tab"        onclick="switchTab('create')">+ Create New</button>
       </div>
     </div>
 
-    <!-- Requirements list — populated by JS -->
-    <div id="requirements-list">
-      <div class="panel-empty" id="requirements-empty">
-        Select a category to view its requirements.
+    <!-- ── Tab 1: This Category ────────────────────────── -->
+    <div class="req-tab-content active" id="tab-this">
+      <div id="requirements-list">
+        <div class="panel-empty" id="requirements-empty">
+          Select a category to view its requirements.
+        </div>
       </div>
+    </div>
+
+    <!-- ── Tab: Forms (Phase 4) ────────────────────────── -->
+    <!--
+      Shows GovernmentForms linked to this category.
+      Admin can: view linked forms, link a new form, remove a form.
+      The "Summary" section (rendered by renderFormsForCategory()) shows all
+      unique requirements across all linked forms — duplicates collapsed.
+    -->
+    <div class="req-tab-content" id="tab-forms">
+      <!-- List of linked forms + summary — populated by loadFormsForCategory() -->
+      <div id="category-forms-list">
+        <div class="panel-empty" style="padding:1rem;">
+          Select a category to view its linked forms.
+        </div>
+      </div>
+      <!-- Link-form row at the bottom of the tab -->
+      <div style="padding:0.6rem 0.75rem; border-top:2px solid var(--border); background:var(--cream);">
+        <!--
+          Dropdown options are populated by populateFormSelect() which is called
+          whenever loadForms() runs. The current option is preserved on refresh.
+        -->
+        <select id="link-form-select"
+                style="width:100%; margin-bottom:0.4rem; font-size:0.82rem; padding:0.4rem;">
+          <option value="">— Select a form to link —</option>
+          <!-- Populated by populateFormSelect() -->
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="addFormToCategory()">Link Form</button>
+      </div>
+    </div>
+
+    <!-- ── Tab 2: Add from Library ────────────────────── -->
+    <div class="req-tab-content" id="tab-library">
+      <!--
+        Filter row: section dropdown + text search.
+        Results appear below in #library-results.
+      -->
+      <div class="lib-filters">
+        <!--
+          onchange → onSectionFilterChange() instead of loadLibrary() directly.
+          When admin picks "＋ Create new section…", we show the inline form instead.
+        -->
+        <select id="lib-section-filter" onchange="onSectionFilterChange()">
+          <option value="">All sections</option>
+          <!-- Options populated by loadSections() on init —
+               loadSections() also appends "＋ Create new section…" at the end. -->
+        </select>
+        <input type="text"
+               id="lib-search"
+               placeholder="Search..."
+               oninput="loadLibrary()">
+      </div>
+
+      <!--
+        Inline "Create new section" form.
+        Hidden by default. Shown when admin picks "＋ Create new section…" from the dropdown.
+        Calls the existing ajax_create_section endpoint (POST /ajax/builder/section/create/).
+        On success: reloads sections, selects the new one, and loads the library filtered to it.
+      -->
+      <div id="lib-new-section-form"
+           style="display:none; padding:0.75rem 1rem; background:var(--cream);
+                  border-bottom:1px solid var(--border);">
+        <label style="font-size:0.8rem; font-weight:600; display:block; margin-bottom:0.4rem;">
+          New section name:
+        </label>
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+          <input type="text"
+                 id="lib-new-section-name"
+                 class="form-input"
+                 placeholder="e.g. Criminal History"
+                 style="flex:1; font-size:0.85rem;"
+                 onkeydown="if(event.key==='Enter'){createSectionInline();}">
+          <button class="btn btn-sm btn-primary" onclick="createSectionInline()">Create</button>
+          <button class="btn btn-sm btn-outline" onclick="cancelNewSection()">Cancel</button>
+        </div>
+        <div id="lib-new-section-error"
+             style="color:#c0392b; font-size:0.78rem; margin-top:0.3rem; display:none;"></div>
+      </div>
+
+      <!-- "Add entire section" shortcut -->
+      <div style="padding:0.5rem 0.75rem; border-bottom:1px solid var(--border);
+                  display:flex; align-items:center; justify-content:space-between;
+                  font-size:0.8rem; background:var(--cream);">
+        <span style="color:var(--slate);">Bulk-add all requirements from a section:</span>
+        <button class="btn btn-sm btn-outline" onclick="addSectionToCategory()">
+          Add Section →
+        </button>
+      </div>
+
+      <div id="library-results">
+        <div class="panel-empty" style="padding:1.5rem 1rem;">
+          Select a category first, then browse the library.
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Tab 3: Create New ───────────────────────────── -->
+    <div class="req-tab-content" id="tab-create">
+      <div style="padding:1rem; background:var(--cream); border-bottom:1px solid var(--border);">
+
+        <div class="inline-error" id="err-req-name"></div>
+
+        <input type="text" id="new-req-name" placeholder="Requirement name">
+
+        <!-- Phase 1: all types including select, boolean, info_text -->
+        <select id="new-req-type" onchange="onNewTypeChange()">
+          <option value="">— Select type —</option>
+          <optgroup label="Text / Input">
+            <option value="text">Text Field</option>
+            <option value="question">Question</option>
+            <option value="number">Number</option>
+            <option value="date">Date</option>
+          </optgroup>
+          <optgroup label="Phase 1 Types">
+            <option value="select">Select / Dropdown</option>
+            <option value="boolean">Yes / No</option>
+            <option value="info_text">Information Block (read-only)</option>
+          </optgroup>
+          <optgroup label="File">
+            <option value="document">Document Upload</option>
+          </optgroup>
+        </select>
+
+        <textarea id="new-req-desc"
+                  placeholder="Description shown to the user (optional)"
+                  rows="2"></textarea>
+
+        <!-- Section assignment — helps organise the library -->
+        <select id="new-req-section">
+          <option value="">— No section (Uncategorized) —</option>
+          <!-- Options populated by loadSections() on init -->
+        </select>
+
+        <!--
+          profile_mapping: dot-path to a profile field for Phase 2 auto-fill.
+          Example: "profile.date_of_birth" → Phase 2 pre-fills from user profile.
+          Leave blank if no auto-fill is needed.
+          EXPAND (Phase 2): implement auto-fill logic in cases/forms.py build_initial().
+        -->
+        <input type="text"
+               id="new-req-mapping"
+               placeholder="Profile mapping (e.g. profile.first_name) — Phase 2">
+
+        <label style="display:flex; align-items:center; gap:0.4rem;
+                       font-size:0.8rem; margin-bottom:0.5rem; cursor:pointer;">
+          <input type="checkbox" id="new-req-required" checked style="width:auto; margin:0;">
+          Required
+        </label>
+
+        <div class="inline-form-actions">
+          <button class="btn btn-sm btn-primary" onclick="createRequirement()">
+            Create &amp; Add
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Phase 4: Form Detail Panel ────────────────────────────
+         Replaces the category tab bar when admin selects a form from Panel 1.
+         Hidden by default (display:none); shown by selectForm().
+         Contains its own two-tab layout: Requirements | Used In Categories.
+    ── -->
+    <div id="form-detail-panel" style="display:none; display:flex; flex-direction:column; height:100%; display:none;">
+
+      <!-- Header: form name, meta counts, Edit/Delete/Close buttons -->
+      <div class="form-detail-header">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:0.5rem;">
+          <div style="flex:1; min-width:0;">
+            <div class="form-detail-title" id="form-detail-title">—</div>
+            <div class="form-detail-meta"  id="form-detail-meta"></div>
+          </div>
+          <div style="display:flex; gap:0.35rem; flex-shrink:0;">
+            <button class="btn btn-sm btn-outline" onclick="showEditFormModal()">Edit</button>
+            <button class="btn btn-sm btn-danger"  onclick="deleteForm(state.formId)">Delete</button>
+            <!-- Close returns Panel 3 to normal category mode -->
+            <button class="btn btn-sm btn-outline" onclick="clearFormDetail()" title="Back to category">✕ Close</button>
+          </div>
+        </div>
+        <!--
+          Source URL row — shown when form.source_url is set.
+          WHY two divs (url / no-url): one hides and the other shows depending on
+          whether source_url is populated; avoids empty <a> links.
+        -->
+        <div id="form-detail-url" style="margin-top:0.4rem; font-size:0.75rem; display:none;">
+          <a id="form-detail-url-link" href="#" target="_blank" rel="noopener"
+             style="color:var(--amber); word-break:break-all;">Source URL ↗</a>
+          <button class="btn btn-sm btn-outline"
+                  style="font-size:0.7rem; margin-left:0.5rem;"
+                  onclick="openImportModal()">↓ Import from URL</button>
+        </div>
+        <div id="form-detail-no-url" style="margin-top:0.35rem;">
+          <button class="btn btn-sm btn-outline"
+                  style="font-size:0.7rem;"
+                  onclick="openImportModal()">↓ Import from URL</button>
+        </div>
+      </div><!-- /form-detail-header -->
+
+      <!-- Two-tab bar inside form detail -->
+      <div class="req-tabs" style="border-bottom:1px solid var(--border); flex-shrink:0;">
+        <button class="req-tab active" id="ftab-btn-reqs" onclick="switchFormTab('reqs')">Requirements</button>
+        <button class="req-tab"        id="ftab-btn-cats" onclick="switchFormTab('cats')">Used In Categories</button>
+      </div>
+
+      <!-- TAB A: Requirements linked to this form -->
+      <div id="ftab-reqs" style="overflow-y:auto; flex:1;">
+        <!--
+          "Add from library" bar at top.
+          Options populated by populateFormReqSelect() when a form is selected.
+          Requirement is added via ajax_add_req_to_form.
+        -->
+        <div style="padding:0.5rem 0.75rem; border-bottom:1px solid var(--border);
+                    background:var(--cream); display:flex; gap:0.5rem; align-items:center;">
+          <select id="form-add-req-select"
+                  style="flex:1; font-size:0.8rem; padding:0.35rem;">
+            <option value="">— Add requirement from library —</option>
+          </select>
+          <button class="btn btn-sm btn-primary" onclick="addReqToForm()">Add</button>
+        </div>
+        <!-- Requirements list — populated by renderFormRequirements() -->
+        <div id="form-reqs-list">
+          <div class="panel-empty">Loading...</div>
+        </div>
+      </div><!-- /ftab-reqs -->
+
+      <!-- TAB B: Categories that use this form -->
+      <div id="ftab-cats" style="display:none; overflow-y:auto; flex:1; padding:0.75rem;">
+        <!-- Populated by renderFormCategories() -->
+        <div id="form-cats-list">
+          <div class="panel-empty">Loading...</div>
+        </div>
+      </div><!-- /ftab-cats -->
+
+    </div><!-- /form-detail-panel -->
+
+  </div><!-- /panel-requirements -->
+
+</div><!-- /builder-wrap -->
+
+
+<!-- ══ Phase 4: Modals (rendered outside builder-wrap so they overlay correctly) ═══ -->
+
+<!--
+  Import from URL modal.
+  Triggered by "↓ Import from URL" button in form detail header.
+  Saves source_url to GovernmentForm via ajax_import_from_url.
+  Web crawler is not yet implemented — the URL is stored for future use.
+-->
+<div class="modal-overlay" id="import-url-modal">
+  <div class="modal-box">
+    <div class="modal-title">Import Requirements from URL</div>
+    <p style="font-size:0.83rem; color:var(--slate); margin-bottom:1rem; line-height:1.6;">
+      Paste the government page URL where this form's requirements are listed.
+      The web crawler will read it automatically when implemented.
+    </p>
+    <input type="url" id="import-url-input"
+           placeholder="https://canada.ca/en/immigration-refugees-citizenship/...">
+    <!-- Warning: crawler placeholder — honest about current state -->
+    <div style="background:#fff4e5; border:1px solid #f5c68a; border-radius:4px;
+                padding:0.6rem 0.75rem; font-size:0.8rem; margin-bottom:1rem; line-height:1.5;">
+      &#9888; Web crawler is not yet implemented.<br>
+      The URL will be saved to this form for future use.
+      You can add requirements manually in the meantime.
+    </div>
+    <div class="inline-error" id="err-import-url"></div>
+    <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+      <button class="btn btn-sm btn-primary" onclick="submitImportUrl()">Save URL</button>
+      <button class="btn btn-sm btn-outline" onclick="closeImportModal()">Cancel</button>
     </div>
   </div>
-
 </div>
+
+<!--
+  Edit Form modal.
+  Pre-populated from the current form's data when admin clicks "Edit" in the header.
+  Saves via ajax_edit_form.
+-->
+<div class="modal-overlay" id="edit-form-modal">
+  <div class="modal-box">
+    <div class="modal-title">Edit Form</div>
+    <div class="inline-error" id="err-edit-form"></div>
+    <input type="text" id="edit-form-code"       placeholder="Form code (e.g. IMM5710)">
+    <input type="text" id="edit-form-name-modal"  placeholder="Full name">
+    <textarea         id="edit-form-desc-modal" rows="2" placeholder="Description (optional)"></textarea>
+    <input type="url"  id="edit-form-url-modal"   placeholder="Source URL (optional)">
+    <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:0.25rem;">
+      <button class="btn btn-sm btn-primary" onclick="submitEditForm()">Save</button>
+      <button class="btn btn-sm btn-outline"
+              onclick="document.getElementById('edit-form-modal').classList.remove('open');">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
 <script>
 /*
  * ─────────────────────────────────────────────────────────────
- * SERVICE BUILDER — Client-side JavaScript
+ * SERVICE BUILDER — Client-side JavaScript (Phases 1–4)
  *
- * State object tracks current selections:
+ * State object:
  *   state.serviceId    — currently selected service
  *   state.serviceName  — for display
  *   state.categoryId   — deepest selected category
- *   state.categoryPath — array of {id, name} from root to selected
- *                        used for breadcrumb + knowing where to create subcategories
+ *   state.categoryPath — [{id, name}] root → selected (for breadcrumb)
+ *   state.sections     — cached section list (for edit form pickers)
+ *   state.formId       — Phase 4: currently selected GovernmentForm id
+ *   state.formName     — Phase 4: form name for display
+ *   state.mode         — 'category' | 'form' — controls Panel 3 display
  *
  * Flow:
- *   1. On load → fetch services → render Panel 1
- *   2. Click service → fetch top categories → render Panel 2
- *   3. Click category → fetch its detail → render Panel 3 (requirements)
- *                     → if has_children → add sub-level below in Panel 2
- *   4. Click subcategory → same as step 3
- *   5. + New buttons → toggle inline forms → POST to AJAX endpoint → re-render
+ *   1. On load → fetch services + sections + forms → render Panel 1
+ *   2. Click service → fetch top-level categories → render Panel 2
+ *   3. Click category → fetch detail → render Panel 3 (Tab 1: requirements)
+ *                     → if has_children → show sub-level in Panel 2
+ *   4. Tab "Forms" → shows GovernmentForms linked to category; link/unlink
+ *   5. Tab "Add from Library" → filter + search → click Add → links req to category
+ *   6. Tab "Create New" → creates library item + links to category
+ *   7. Choices panel → appears inside Tab 1 for select-type requirements
+ *   8. Forms Library (Panel 1) → click form → Panel 3 switches to Form Detail mode
  *
- * CSRF token is read from the cookie — Django sets it automatically.
- * EXPAND: add drag-and-drop requirement ordering once an 'order' field
- *         is added to the Requirement model.
+ * All POST calls include the CSRF token read from the cookie.
+ * All user-supplied content rendered via innerHTML goes through escHtml() — XSS safe.
+ *
+ * EXPAND: add drag-and-drop reordering using ajax_reorder_category_req endpoint.
  * ─────────────────────────────────────────────────────────────
  */
 
@@ -353,15 +964,23 @@ const state = {
   serviceId:    null,
   serviceName:  '',
   categoryId:   null,
-  categoryPath: [],   // [{id, name}] from root to deepest selected
+  categoryPath: [],
+  // sections: cached from loadSections() so edit form pickers don't need extra API calls.
+  // Shape: [{id, name, slug, description, order, req_count}, ...]
+  sections: [],
+  // Phase 4: currently selected government form (null = none selected)
+  formId:   null,
+  formName: '',
+  // 'category' — Panel 3 shows category requirements + tab bar
+  // 'form'     — Panel 3 shows form detail (req list + categories)
+  mode: 'category',
 };
 
 // ── CSRF helper ───────────────────────────────────────────────
-// Reads CSRF token from cookie — required for all POST requests.
 function getCsrf() {
   const name    = 'csrftoken';
   const cookies = document.cookie.split(';');
-  for (let c of cookies) {
+  for (const c of cookies) {
     const [k, v] = c.trim().split('=');
     if (k === name) return decodeURIComponent(v);
   }
@@ -369,10 +988,6 @@ function getCsrf() {
 }
 
 // ── API helpers ───────────────────────────────────────────────
-// All API calls go through these two functions.
-// GET → returns parsed JSON
-// POST → sends JSON body, returns parsed JSON
-
 async function apiGet(url) {
   const res = await fetch(url);
   return res.json();
@@ -381,22 +996,28 @@ async function apiGet(url) {
 async function apiPost(url, body) {
   const res = await fetch(url, {
     method:  'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRFToken':  getCsrf(),
-    },
-    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+    body:    JSON.stringify(body),
   });
   return res.json();
 }
 
-// ── Toggle inline form ─────────────────────────────────────────
+// ── Utility ───────────────────────────────────────────────────
+// Escapes HTML special chars to prevent XSS when inserting
+// user-provided content (from DB or form) into innerHTML.
+function escHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function toggleForm(formId) {
   const form = document.getElementById(formId);
   if (form) form.classList.toggle('open');
 }
 
-// ── Show/clear inline errors ──────────────────────────────────
 function showError(elId, msg) {
   const el = document.getElementById(elId);
   if (!el) return;
@@ -409,61 +1030,86 @@ function clearError(elId) {
   if (el) el.classList.remove('show');
 }
 
-// ── Render helpers ─────────────────────────────────────────────
+// ── Tab switching ──────────────────────────────────────────────
+// Each tab button calls switchTab(name). The active class is toggled
+// on both the button and its content div.
+// Tab order (left → right): this=0, forms=1, library=2, create=3
+// WHY include 'forms' here: all four tabs live inside the same .req-tabs bar
+// so querySelectorAll('.req-tab') returns all four; index must match DOM order.
+function switchTab(name) {
+  // Deactivate all tabs in the category tab bar
+  document.querySelectorAll('#req-tab-bar .req-tab').forEach(function(btn) {
+    btn.classList.remove('active');
+  });
+  document.querySelectorAll('.req-tab-content').forEach(function(div) {
+    div.classList.remove('active');
+  });
 
+  // Map name → DOM index (matches the order the buttons appear in req-tab-bar)
+  const tabMap = { 'this': 0, 'forms': 1, 'library': 2, 'create': 3 };
+  const idx    = tabMap[name] !== undefined ? tabMap[name] : 0;
+  document.querySelectorAll('#req-tab-bar .req-tab')[idx].classList.add('active');
+
+  const contentMap = {
+    'this':    'tab-this',
+    'forms':   'tab-forms',
+    'library': 'tab-library',
+    'create':  'tab-create',
+  };
+  document.getElementById(contentMap[name]).classList.add('active');
+
+  // Lazy-load data when switching to these tabs
+  if (name === 'library') loadLibrary();
+  if (name === 'forms')   loadFormsForCategory();
+}
+
+// ── Render: Services ─────────────────────────────────────────
 function renderServiceList(services) {
   const container = document.getElementById('service-list');
 
   if (!services.length) {
-    container.innerHTML = '<div class="panel-empty">No services yet. Create one above.</div>';
+    container.innerHTML = '<div class="panel-empty">No services yet. Click + New to add one.</div>';
     return;
   }
 
-  container.innerHTML = services.map(s => `
-  <div class="panel-item ${s.id === state.serviceId ? 'selected' : ''}"
-       onclick="selectService(${s.id}, '${escHtml(s.name)}')">
-    <div>
-      <div class="panel-item-name">${escHtml(s.name)}</div>
-      <div class="panel-item-meta">${s.category_count} categories</div>
-    </div>
-    <div style="display:flex; align-items:center; gap:0.4rem;">
-      <span class="panel-item-arrow">›</span>
-      <button class="btn-delete"
-              onclick="event.stopPropagation(); deleteService(${s.id})"
-              title="Delete service">✕</button>
-    </div>
-  </div>
-`).join('');
+  container.innerHTML = services.map(function(s) {
+    return '<div class="panel-item ' + (s.id === state.serviceId ? 'selected' : '') + '"'
+      + ' onclick="selectService(' + s.id + ', \'' + escHtml(s.name) + '\')">'
+      + '<div>'
+      + '<div class="panel-item-name">' + escHtml(s.name) + '</div>'
+      + '<div class="panel-item-meta">' + s.category_count + ' categories</div>'
+      + '</div>'
+      + '<div style="display:flex;align-items:center;gap:0.4rem;">'
+      + '<span class="panel-item-arrow">›</span>'
+      + '<button class="btn-delete"'
+      + ' onclick="event.stopPropagation();deleteService(' + s.id + ')"'
+      + ' title="Delete service">✕</button>'
+      + '</div>'
+      + '</div>';
+  }).join('');
 }
 
+// ── Render: Category level ────────────────────────────────────
 function renderCategoryLevel(categories, depth, parentId) {
   /*
-   * Renders one level of the category chain.
-   * Each level gets its own container div with id='cat-level-{depth}'.
-   * When a deeper level is selected, shallower levels stay visible above.
-   *
-   * depth=0 → top-level categories for a service
-   * depth=1 → subcategories of selected depth-0 category
-   * etc.
+   * Each depth gets its own container: id='cat-level-{depth}'.
+   * When user selects at depth N, levels N+1 and deeper are removed.
    */
-
-  // Remove any levels deeper than this one
-  let i = depth;
+  var i = depth;
   while (true) {
-    const el = document.getElementById(`cat-level-${i}`);
+    var el = document.getElementById('cat-level-' + i);
     if (!el) break;
     el.remove();
     i++;
   }
 
-  const container = document.getElementById('category-chain-container');
-  const empty     = document.getElementById('categories-empty');
+  var container = document.getElementById('category-chain-container');
+  var empty     = document.getElementById('categories-empty');
   if (empty) empty.style.display = 'none';
 
   if (!categories.length) {
-    // No categories at this level — show add button hint
-    const hint = document.createElement('div');
-    hint.id        = `cat-level-${depth}`;
+    var hint       = document.createElement('div');
+    hint.id        = 'cat-level-' + depth;
     hint.className = 'panel-empty';
     hint.textContent = depth === 0
       ? 'No categories yet. Click + New to add one.'
@@ -472,156 +1118,301 @@ function renderCategoryLevel(categories, depth, parentId) {
     return;
   }
 
-  const level = document.createElement('div');
-  level.id = `cat-level-${depth}`;
+  var level = document.createElement('div');
+  level.id  = 'cat-level-' + depth;
 
-  // Divider label if nested
   if (depth > 0) {
-    const label     = document.createElement('div');
+    var label       = document.createElement('div');
     label.className = 'chain-header';
     label.textContent = '↳ Subcategories';
     level.appendChild(label);
   }
 
-  categories.forEach(cat => {
-    const item = document.createElement('div');
-    item.className = `panel-item ${cat.id === state.categoryId ? 'selected' : ''}`;
-    item.innerHTML = `
-  <div>
-    <div class="panel-item-name">${escHtml(cat.name)}</div>
-    <div class="panel-item-meta">
-      ${cat.req_count} req
-      ${cat.has_children ? ' · has subcategories' : ''}
-    </div>
-  </div>
-  <div style="display:flex; align-items:center; gap:0.4rem;">
-    <span class="panel-item-arrow">›</span>
-    <button class="btn-delete"
-            onclick="event.stopPropagation(); deleteCategory(${cat.id}, ${depth}, ${parentId})"
-            title="Delete category">✕</button>
-  </div>
-`;
-    item.onclick = () => selectCategory(cat.id, cat.name, depth, parentId);
+  categories.forEach(function(cat) {
+    var item       = document.createElement('div');
+    item.className = 'panel-item ' + (cat.id === state.categoryId ? 'selected' : '');
+    item.innerHTML =
+      '<div>'
+      + '<div class="panel-item-name">' + escHtml(cat.name) + '</div>'
+      + '<div class="panel-item-meta">'
+      + cat.req_count + ' req'
+      + (cat.has_children ? ' · subcategories' : '')
+      + '</div>'
+      + '</div>'
+      + '<div style="display:flex;align-items:center;gap:0.4rem;">'
+      + '<span class="panel-item-arrow">›</span>'
+      + '<button class="btn-delete"'
+      + ' onclick="event.stopPropagation();deleteCategory(' + cat.id + ',' + depth + ',' + parentId + ')"'
+      + ' title="Delete">✕</button>'
+      + '</div>';
+    item.onclick = function() { selectCategory(cat.id, cat.name, depth, parentId); };
     level.appendChild(item);
   });
 
   container.appendChild(level);
 }
 
+// ── Render: Requirements (Tab 1) ──────────────────────────────
+/*
+ * ownReqs — list of {id, name, type, description, is_required, cr_id, cr_order, section_name, profile_mapping}
+ *           Note: cr_id = CategoryRequirement id — used for Remove and Reorder.
+ * inherited — list of {req:{...}, from_category:{id,name}}
+ */
 function renderRequirements(ownReqs, inherited, categoryName) {
-  const container = document.getElementById('requirements-list');
-  const title     = document.getElementById('panel3-title');
-  const btn       = document.getElementById('btn-add-requirement');
+  var container = document.getElementById('requirements-list');
+  var title     = document.getElementById('panel3-title');
+  var tabBar    = document.getElementById('req-tab-bar');
 
   title.textContent = categoryName;
-  btn.style.display = '';
 
-  let html = '';
+  // Show tab bar once a category is selected
+  tabBar.style.display = '';
 
-  // Own requirements
+  var html = '';
+
   if (ownReqs.length) {
-    ownReqs.forEach(req => {
-      html += `
-        <div class="req-row" id="req-row-${req.id}">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div>
-              <span style="font-weight:500;">${escHtml(req.name)}</span>
-              <span class="type-badge">${req.type}</span>
-              ${req.is_required
-                ? '<span class="type-badge" style="border-color:#b7dfca;color:#2e7d52;">required</span>'
-                : ''}
-            </div>
-            <button class="btn btn-sm btn-outline"
-                    onclick="toggleReqEdit(${req.id})">
-              Edit
-            </button>
-                <button class="btn btn-sm btn-danger"
-                onclick="deleteRequirement(${req.id})">
-                Delete
-            </button>
-          </div>
-          ${req.description
-            ? `<div class="text-muted text-small mt-1" 
-                style="word-break:break-word; white-space:pre-wrap;">
-                ${escHtml(req.description)}
-                </div>`
-            : ''}
+    ownReqs.forEach(function(req) {
+      var typeBadge = '<span class="type-badge">' + escHtml(req.type) + '</span>';
 
-          <!-- Inline edit form for this requirement -->
-          <div class="req-edit-form" id="req-edit-${req.id}">
-            <div class="inline-error" id="err-req-edit-${req.id}"></div>
-            <input type="text"
-                   id="edit-req-name-${req.id}"
-                   value="${escHtml(req.name)}"
-                   placeholder="Name">
-            <select id="edit-req-type-${req.id}">
-              ${['text','question','number','date','document'].map(t =>
-                `<option value="${t}" ${req.type === t ? 'selected' : ''}>${t}</option>`
-              ).join('')}
-            </select>
-            <textarea id="edit-req-desc-${req.id}"
-                      placeholder="Description"
-                      rows="2">${escHtml(req.description)}</textarea>
-            <label style="display:flex; align-items:center; gap:0.4rem;
-                           font-size:0.8rem; margin-bottom:0.5rem; cursor:pointer;">
-              <input type="checkbox"
-                     id="edit-req-required-${req.id}"
-                     ${req.is_required ? 'checked' : ''}
-                     style="width:auto; margin:0;">
-              Required
-            </label>
-            <label style="display:flex; align-items:center; gap:0.4rem;
-                           font-size:0.8rem; margin-bottom:0.5rem; cursor:pointer;">
-              <input type="checkbox"
-                     id="edit-req-active-${req.id}"
-                     ${req.is_active ? 'checked' : ''}
-                     style="width:auto; margin:0;">
-              Active
-            </label>
-            <div class="inline-form-actions">
-              <button class="btn btn-sm btn-primary"
-                      onclick="saveRequirement(${req.id})">Save</button>
-              <button class="btn btn-sm btn-outline"
-                      onclick="toggleReqEdit(${req.id})">Cancel</button>
-            </div>
-          </div>
-        </div>
-      `;
+      // 'required' badge — green
+      var reqBadge = req.is_required
+        ? '<span class="type-badge" style="border-color:#b7dfca;color:#2e7d52;">required</span>'
+        : '';
+
+      // Section badge — shows which library section this belongs to
+      var sectionBadge = req.section_name
+        ? '<span class="type-badge" style="color:var(--amber);border-color:var(--amber);">'
+          + escHtml(req.section_name) + '</span>'
+        : '';
+
+      // Phase 4: eligibility gate badge — ⚑ shown when is_eligibility is true
+      // WHY a distinct badge: eligibility requirements are special — they control
+      // whether the user is even eligible to proceed with the application.
+      var eligBadge = req.is_eligibility
+        ? '<span class="elig-badge" title="Eligibility gate — answer is checked against a condition">&#9873; eligibility</span>'
+        : '';
+
+      // profile_mapping hint
+      var mappingHint = req.profile_mapping
+        ? '<div style="font-size:0.7rem;color:var(--slate);margin-top:0.2rem;">'
+          + '↪ auto-fill: ' + escHtml(req.profile_mapping) + '</div>'
+        : '';
+
+      // "Manage Choices" button — only for select-type
+      var choicesBtn = req.type === 'select'
+        ? '<button class="btn btn-sm btn-outline" style="font-size:0.7rem;"'
+          + ' onclick="toggleChoices(' + req.id + ', ' + req.cr_id + ')">Choices</button>'
+        : '';
+
+      html += '<div class="req-row" id="req-row-' + req.id + '">'
+        // ── Header row ──
+        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+        + '<div>'
+        + '<span style="font-weight:500;">' + escHtml(req.name) + '</span>'
+        + typeBadge + reqBadge + sectionBadge + eligBadge
+        + '</div>'
+        + '<div style="display:flex;gap:0.35rem;">'
+        + choicesBtn
+        + '<button class="btn btn-sm btn-outline" onclick="toggleReqEdit(' + req.id + ')">Edit</button>'
+        // "Remove from category" — removes the CategoryRequirement bridge row.
+        // The library item is preserved and can be added to other categories.
+        + '<button class="btn btn-sm btn-danger"'
+        + ' onclick="removeFromCategory(' + req.cr_id + ')"'
+        + ' title="Remove from this category (keeps in library)">Remove</button>'
+        + '</div>'
+        + '</div>'
+        // ── Description ──
+        + (req.description
+            ? '<div style="font-size:0.8rem;color:var(--slate);margin-top:0.25rem;">'
+              + escHtml(req.description) + '</div>'
+            : '')
+        + mappingHint
+
+        // ── Edit form (hidden by default) ──
+        + '<div class="req-edit-form" id="req-edit-' + req.id + '">'
+        + '<div class="inline-error" id="err-req-edit-' + req.id + '"></div>'
+        + '<input type="text" id="edit-req-name-' + req.id + '" value="' + escHtml(req.name) + '" placeholder="Name">'
+        + '<select id="edit-req-type-' + req.id + '">'
+        + ['text','question','number','date','document','select','boolean','info_text'].map(function(t) {
+            return '<option value="' + t + '" ' + (req.type === t ? 'selected' : '') + '>' + t + '</option>';
+          }).join('')
+        + '</select>'
+        + '<textarea id="edit-req-desc-' + req.id + '" rows="2">' + escHtml(req.description) + '</textarea>'
+        + '<input type="text" id="edit-req-mapping-' + req.id + '"'
+        + ' value="' + escHtml(req.profile_mapping) + '"'
+        + ' placeholder="User profile auto-fill (e.g. profile.first_name)" title="Phase 2: dot-path to the managing user\'s profile. Fills shared questions like address.">'
+        // Phase 3: managed_profile_mapping — auto-fill from the interior person's own data.
+        // Available ManagedProfile fields (from PersonalInfo abstract base):
+        //   first_name, last_name, date_of_birth, gender,
+        //   country_of_birth, city_of_birth, passport_number
+        + '<input type="text" id="edit-req-mp-mapping-' + req.id + '"'
+        + ' value="' + escHtml(req.managed_profile_mapping || '') + '"'
+        + ' placeholder="Interior person auto-fill (e.g. first_name, date_of_birth)" title="Phase 3: dot-path into ManagedProfile. Pre-fills from the interior person\'s own record.">'
+        // Phase 2: form_field_id — links this requirement to a government form field for Phase 4 scrapers.
+        // Format: '<form_code>__<field_id>'  e.g. 'IMM5710__gender'
+        + '<input type="text" id="edit-req-form-field-id-' + req.id + '"'
+        + ' value="' + escHtml(req.form_field_id || '') + '"'
+        + ' placeholder="Gov. form field ID (e.g. IMM5710__gender)" title="Phase 4: identifier used by scrapers to auto-populate government PDF forms. Leave blank if not applicable.">'
+        // Section picker — lets admin move this requirement to a different library section.
+        // Populated from state.sections (cached when the page loads loadSections()).
+        // WHY a <select> here instead of a text input? The section must be an existing
+        // DB row — a picker prevents typos and orphaned references.
+        + '<label style="font-size:0.78rem;font-weight:600;display:block;margin-top:0.5rem;">Library Section</label>'
+        + '<select id="edit-req-section-' + req.id + '"'
+        + ' title="Move this requirement to a different library section. Affects which section filter shows it in the library browser.">'
+        + '<option value="">— Uncategorized —</option>'
+        + state.sections.map(function(s) {
+            // Pre-select the requirement's current section so admin sees where it is now
+            return '<option value="' + s.id + '"'
+              + (req.section_id === s.id ? ' selected' : '')
+              + '>' + escHtml(s.name) + '</option>';
+          }).join('')
+        + '</select>'
+        + '<div style="font-size:0.72rem;color:var(--slate);margin:0.2rem 0 0.5rem;">'
+        + 'Changes which section this requirement appears under in the library browser.</div>'
+        + '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;margin-bottom:0.4rem;cursor:pointer;">'
+        + '<input type="checkbox" id="edit-req-required-' + req.id + '" '
+        + (req.is_required ? 'checked' : '') + ' style="width:auto;margin:0;"> Required</label>'
+        + '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;margin-bottom:0.5rem;cursor:pointer;">'
+        + '<input type="checkbox" id="edit-req-active-' + req.id + '" '
+        + (req.is_active ? 'checked' : '') + ' style="width:auto;margin:0;"> Active</label>'
+
+        // ── Phase 4: Eligibility Check ─────────────────────────────────────────
+        // Collapsible section. The arrow toggle calls toggleEligibility(reqId).
+        // WHY collapsible: eligibility fields are rarely needed — keeping them
+        // hidden by default prevents visual noise on requirements that are just
+        // normal data-collection fields.
+        + '<div class="eligibility-toggle" onclick="toggleEligibility(' + req.id + ')">'
+        + '<span id="elig-arrow-' + req.id + '">' + (req.is_eligibility ? '▾' : '▸') + '</span>'
+        + ' &#9873; Eligibility Check'
+        + '</div>'
+        + '<div class="eligibility-fields' + (req.is_eligibility ? ' open' : '') + '" id="elig-fields-' + req.id + '">'
+
+        // is_eligibility checkbox — checking it expands the other fields
+        + '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;margin-bottom:0.6rem;cursor:pointer;">'
+        + '<input type="checkbox" id="edit-req-elig-' + req.id + '" style="width:auto;margin:0;" '
+        + (req.is_eligibility ? 'checked' : '')
+        + ' onchange="toggleEligibility(' + req.id + ')">'
+        + ' Mark as eligibility gate (answer is checked against a condition)</label>'
+
+        // Operator — how to compare the answer against the threshold value
+        + '<label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.15rem;">Operator</label>'
+        + '<select id="edit-req-elig-op-' + req.id + '">'
+        + [
+            ['on_or_before_date', 'On or before date'],
+            ['before_date',       'Strictly before date'],
+            ['on_or_after_date',  'On or after date'],
+            ['after_date',        'Strictly after date'],
+            ['equals',            'Equals'],
+            ['not_equals',        'Does not equal'],
+            ['yes',               'Answer is Yes'],
+            ['no',                'Answer is No'],
+            ['contains',          'Contains text'],
+          ].map(function(op) {
+            return '<option value="' + op[0] + '"'
+              + (req.eligibility_operator === op[0] ? ' selected' : '')
+              + '>' + op[1] + '</option>';
+          }).join('')
+        + '</select>'
+
+        // Threshold value — the right-hand side of the comparison
+        + '<label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.15rem;">Threshold value</label>'
+        + '<input type="text" id="edit-req-elig-val-' + req.id + '"'
+        + ' value="' + escHtml(req.eligibility_value || '') + '"'
+        + ' placeholder="e.g. 2025-02-28 for date · yes for boolean · canada for contains">'
+
+        // Fail message — shown to the user if they do not meet the condition
+        + '<label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.15rem;">Fail message (shown to user if ineligible)</label>'
+        + '<input type="text" id="edit-req-elig-msg-' + req.id + '"'
+        + ' value="' + escHtml(req.eligibility_fail_message || '') + '"'
+        + ' placeholder="e.g. You did not arrive in Canada before the cut-off date.">'
+        + '</div>'
+        // ── /Phase 4: Eligibility Check ───────────────────────────────────────
+
+        + '<div class="inline-form-actions">'
+        + '<button class="btn btn-sm btn-primary" onclick="saveRequirement(' + req.id + ')">Save</button>'
+        + '<button class="btn btn-sm btn-outline" onclick="toggleReqEdit(' + req.id + ')">Cancel</button>'
+        + '</div>'
+        + '</div>'
+
+        // ── Choices panel (hidden; shown for select-type via toggleChoices()) ──
+        + '<div class="choices-panel" id="choices-panel-' + req.id + '">'
+        + '<div style="font-weight:600;margin-bottom:0.5rem;">Dropdown Options</div>'
+        + '<div id="choices-list-' + req.id + '"><em>Loading...</em></div>'
+        + '<div style="margin-top:0.75rem;border-top:1px solid var(--border);padding-top:0.5rem;">'
+        + '<div class="inline-error" id="err-choice-' + req.id + '"></div>'
+        + '<input type="text" id="new-choice-label-' + req.id + '" placeholder="Label (shown to user)"'
+        + ' style="padding:0.35rem 0.5rem;font-size:0.8rem;border:1px solid var(--border);width:100%;margin-bottom:0.3rem;">'
+        + '<input type="text" id="new-choice-value-' + req.id + '" placeholder="Value (stored — leave blank = same as label)"'
+        + ' style="padding:0.35rem 0.5rem;font-size:0.8rem;border:1px solid var(--border);width:100%;margin-bottom:0.4rem;">'
+        + '<button class="btn btn-sm btn-primary" onclick="createChoice(' + req.id + ')">+ Add Option</button>'
+        + '</div>'
+        + '</div>'
+
+        + '</div>';  // /req-row
     });
   } else {
-    html += `
-      <div class="panel-empty" style="padding:1.5rem 1rem;">
-        No requirements yet.
-        <br>Click + Add above to create one.
-      </div>
-    `;
+    html += '<div class="panel-empty" style="padding:1.5rem 1rem;">'
+      + 'No requirements yet.<br>'
+      + '<span style="color:var(--slate);font-size:0.8rem;">'
+      + 'Use "Add from Library" or "Create New" above.</span>'
+      + '</div>';
   }
 
-  // Inherited section
+  // ── Inherited requirements (from parent categories) ──
   if (inherited.length) {
-    html += `
-      <div class="inherited-section">
-        <div style="font-weight:600; margin-bottom:0.5rem; text-transform:uppercase;
-                    letter-spacing:0.06em; font-size:0.7rem;">
-          Inherited from parent categories
-        </div>
-        ${inherited.map(item => `
-          <div style="padding:0.35rem 0; border-bottom:1px solid var(--border);
-                      display:flex; justify-content:space-between;">
-            <span>${escHtml(item.req.name)}
-              <span class="type-badge">${item.req.type}</span>
-            </span>
-            <span style="font-size:0.75rem;">from ${escHtml(item.from_category.name)}</span>
-          </div>
-        `).join('')}
-      </div>
-    `;
+    html += '<div class="inherited-section">'
+      + '<div style="font-weight:600;margin-bottom:0.5rem;text-transform:uppercase;'
+      + 'letter-spacing:0.06em;font-size:0.7rem;">Inherited from parent categories</div>'
+      + inherited.map(function(item) {
+          return '<div style="padding:0.35rem 0;border-bottom:1px solid var(--border);'
+            + 'display:flex;justify-content:space-between;">'
+            + '<span>' + escHtml(item.req.name)
+            + '<span class="type-badge">' + escHtml(item.req.type) + '</span></span>'
+            + '<span style="font-size:0.75rem;">from ' + escHtml(item.from_category.name) + '</span>'
+            + '</div>';
+        }).join('')
+      + '</div>';
   }
 
   container.innerHTML = html;
 }
 
-// ── Actions ────────────────────────────────────────────────────
+// ── Render: Library results (Tab 2) ──────────────────────────
+function renderLibraryResults(requirements, alreadyLinkedIds) {
+  /*
+   * alreadyLinkedIds — Set of requirement IDs already in this category.
+   * Already-linked items show a "✓ Added" badge instead of an Add button.
+   */
+  var container = document.getElementById('library-results');
+
+  if (!requirements.length) {
+    container.innerHTML = '<div class="panel-empty">No requirements found. Try a different filter.</div>';
+    return;
+  }
+
+  container.innerHTML = requirements.map(function(req) {
+    var alreadyAdded = alreadyLinkedIds && alreadyLinkedIds.has(req.id);
+    var actionBtn    = alreadyAdded
+      ? '<span style="font-size:0.75rem;color:#2e7d52;">✓ Added</span>'
+      : '<button class="btn btn-sm btn-outline" onclick="addFromLibrary(' + req.id + ')">'
+        + 'Add</button>';
+
+    return '<div class="lib-item" id="lib-item-' + req.id + '">'
+      + '<div class="lib-item-info">'
+      + '<div class="lib-item-name">' + escHtml(req.name) + '</div>'
+      + '<div class="lib-item-meta">'
+      + '<span class="type-badge" style="margin-left:0;">' + escHtml(req.type) + '</span>'
+      + ' · ' + escHtml(req.section_name)
+      + (req.profile_mapping ? ' · ↪ ' + escHtml(req.profile_mapping) : '')
+      + '</div>'
+      + '</div>'
+      + actionBtn
+      + '</div>';
+  }).join('');
+}
+
+// ── Actions: Service ──────────────────────────────────────────
 
 async function selectService(id, name) {
   state.serviceId    = id;
@@ -629,133 +1420,293 @@ async function selectService(id, name) {
   state.categoryId   = null;
   state.categoryPath = [];
 
-  // Update service list UI
   loadServices();
 
-  // Show + New category button
   document.getElementById('btn-add-category').style.display = '';
-
-  // Update breadcrumb
   const bc = document.getElementById('category-breadcrumb');
-  bc.style.display  = 'block';
-  bc.textContent    = name;
+  bc.style.display = 'block';
+  bc.textContent   = name;
 
-  // Clear requirements panel
+  // Reset requirements panel
   document.getElementById('requirements-list').innerHTML =
     '<div class="panel-empty">Select a category to view its requirements.</div>';
-  document.getElementById('panel3-title').textContent    = 'Requirements';
-  document.getElementById('btn-add-requirement').style.display = 'none';
+  document.getElementById('panel3-title').textContent = 'Requirements';
+  document.getElementById('req-tab-bar').style.display = 'none';
+  // Switch back to Tab 1 for the next category selection
+  switchTab('this');
 
-  // Load top-level categories
   const data = await apiGet(
-    `{% url 'admin_panel:ajax_get_categories' %}?service_id=${id}`
+    '{% url "admin_panel:ajax_get_categories" %}?service_id=' + id
   );
   renderCategoryLevel(data.categories, 0, null);
 }
 
 async function selectCategory(id, name, depth, parentId) {
   state.categoryId = id;
-
-  // Update path — truncate to current depth then add this
   state.categoryPath = state.categoryPath.slice(0, depth);
-  state.categoryPath.push({ id, name });
+  state.categoryPath.push({ id: id, name: name });
 
-  // Update breadcrumb
-  const bc      = document.getElementById('category-breadcrumb');
-  const crumbs  = [state.serviceName, ...state.categoryPath.map(c => c.name)];
+  const bc     = document.getElementById('category-breadcrumb');
+  const crumbs = [state.serviceName].concat(state.categoryPath.map(function(c) { return c.name; }));
   bc.textContent = crumbs.join(' › ');
 
   // Refresh this level to show selection highlight
   const levelData = await apiGet(
     parentId
-      ? `{% url 'admin_panel:ajax_get_categories' %}?parent_id=${parentId}`
-      : `{% url 'admin_panel:ajax_get_categories' %}?service_id=${state.serviceId}`
+      ? '{% url "admin_panel:ajax_get_categories" %}?parent_id=' + parentId
+      : '{% url "admin_panel:ajax_get_categories" %}?service_id=' + state.serviceId
   );
   renderCategoryLevel(levelData.categories, depth, parentId);
 
-  // Load subcategories for next level
+  // Load subcategories for next drill-down level
   const subData = await apiGet(
-    `{% url 'admin_panel:ajax_get_categories' %}?parent_id=${id}`
+    '{% url "admin_panel:ajax_get_categories" %}?parent_id=' + id
   );
   renderCategoryLevel(subData.categories, depth + 1, id);
 
   // Load requirements for right panel
-  const detail = await apiGet(
-    `/admin-panel/ajax/builder/category/${id}/`
-  );
+  const detail = await apiGet('/admin-panel/ajax/builder/category/' + id + '/');
   renderRequirements(detail.own_requirements, detail.inherited, name);
 }
 
 async function loadServices() {
-  const data = await apiGet(`{% url 'admin_panel:ajax_get_services' %}`);
+  const data = await apiGet('{% url "admin_panel:ajax_get_services" %}');
   renderServiceList(data.services);
 }
 
-// ── Create actions ─────────────────────────────────────────────
+// ── Actions: Sections / Library ──────────────────────────────
 
-async function createService() {
-  clearError('err-service-name');
-  const name = document.getElementById('new-service-name').value.trim();
-  const desc = document.getElementById('new-service-desc').value.trim();
+async function loadSections() {
+  /*
+   * Loads sections into:
+   *   1. #lib-section-filter (Add from Library tab filter)
+   *   2. #new-req-section (Create New tab section picker)
+   */
+  const data = await apiGet('/admin-panel/ajax/builder/sections/');
 
-  const res = await apiPost(`{% url 'admin_panel:ajax_create_service' %}`, {
-    name, description: desc
+  const filterSel  = document.getElementById('lib-section-filter');
+  const createSel  = document.getElementById('new-req-section');
+
+  // Preserve existing first option (the "All sections" / "No section" placeholder)
+  while (filterSel.options.length > 1)  filterSel.remove(1);
+  while (createSel.options.length > 1)  createSel.remove(1);
+
+  // Cache the sections array so the requirement edit panel can build its own
+  // section picker without making another API call each time an Edit form opens.
+  state.sections = data.sections;
+
+  data.sections.forEach(function(s) {
+    const o1  = new Option(s.name + ' (' + s.req_count + ')', s.id);
+    const o2  = new Option(s.name, s.id);
+    filterSel.add(o1);
+    createSel.add(o2);
   });
 
-  if (!res.ok) {
-    showError('err-service-name', res.errors?.name?.[0] || 'Error creating service.');
-    return;
-  }
-
-  // Reset form, close it, reload list
-  document.getElementById('new-service-name').value = '';
-  document.getElementById('new-service-desc').value = '';
-  toggleForm('form-new-service');
-  loadServices();
+  // Append "＋ Create new section…" at the bottom of the filter dropdown only.
+  // Selecting it triggers onSectionFilterChange() which shows the inline form.
+  // We use a special sentinel value '__new__' to detect it in the handler.
+  filterSel.add(new Option('＋ Create new section…', '__new__'));
 }
 
-async function createCategory() {
-  clearError('err-category-name');
+function onSectionFilterChange() {
+  /*
+   * Called when admin changes the section filter dropdown.
+   * If they picked "＋ Create new section…", show the inline form.
+   * Otherwise, hide the form and load the library normally.
+   */
+  var val = document.getElementById('lib-section-filter').value;
+  if (val === '__new__') {
+    // Show inline form, clear any previous error / value
+    document.getElementById('lib-new-section-form').style.display = 'block';
+    document.getElementById('lib-new-section-name').value = '';
+    document.getElementById('lib-new-section-error').style.display = 'none';
+    document.getElementById('lib-new-section-name').focus();
+  } else {
+    document.getElementById('lib-new-section-form').style.display = 'none';
+    loadLibrary();
+  }
+}
 
-  if (!state.serviceId) {
-    showError('err-category-name', 'Select a service first.');
+async function createSectionInline() {
+  /*
+   * Called when admin clicks "Create" in the inline section form.
+   * POSTs to ajax_create_section (already built in Phase 1).
+   * On success: reloads section dropdowns, selects the new section, loads library.
+   */
+  var name   = document.getElementById('lib-new-section-name').value.trim();
+  var errEl  = document.getElementById('lib-new-section-error');
+  errEl.style.display = 'none';
+
+  if (!name) {
+    errEl.textContent = 'Please enter a section name.';
+    errEl.style.display = 'block';
     return;
   }
 
-  const name      = document.getElementById('new-category-name').value.trim();
-  const desc      = document.getElementById('new-category-desc').value.trim();
+  var res = await apiPost('/admin-panel/ajax/builder/section/create/', { name: name, order: 0 });
 
-  // Parent = the deepest selected category, or null for top-level
-  const parentId  = state.categoryPath.length
-    ? state.categoryPath[state.categoryPath.length - 1].id
-    : null;
+  if (!res.ok) {
+    // Show first error message from the server
+    var msg = res.errors && res.errors.name ? res.errors.name[0]
+            : (res.errors ? Object.values(res.errors).flat().join(' ') : 'Error creating section.');
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+    return;
+  }
 
-  const res = await apiPost(`{% url 'admin_panel:ajax_create_category' %}`, {
-    name,
-    description: desc,
-    service_id:  state.serviceId,
-    parent_id:   parentId,
+  // Success — hide the form, reload sections, select the new one, load its requirements
+  document.getElementById('lib-new-section-form').style.display = 'none';
+  document.getElementById('lib-new-section-name').value = '';
+  await loadSections();   // repopulates both dropdowns (including the new section)
+  document.getElementById('lib-section-filter').value = res.section.id;
+  loadLibrary();          // load requirements filtered to the new section
+}
+
+function cancelNewSection() {
+  /*
+   * Called when admin clicks "Cancel" in the inline section form.
+   * Resets the dropdown to "All sections" and hides the form.
+   */
+  document.getElementById('lib-section-filter').value = '';
+  document.getElementById('lib-new-section-form').style.display = 'none';
+  loadLibrary();
+}
+
+async function loadLibrary() {
+  /*
+   * Fetches and renders the library panel for the current section/search filters.
+   * Makes two AJAX calls:
+   *   1. Library list (filtered by section + search)
+   *   2. Category detail (to mark already-linked requirements with "✓ Added")
+   *
+   * WHY try-catch?
+   *   If either apiGet() throws (network error, bad JSON, server 500), the old
+   *   code silently left stale content in the panel. Now errors are surfaced so
+   *   the admin knows something went wrong and can check the browser console.
+   */
+  const container = document.getElementById('library-results');
+  try {
+    const sectionId = document.getElementById('lib-section-filter').value;
+    const search    = document.getElementById('lib-search').value.trim();
+
+    var url = '/admin-panel/ajax/builder/library/';
+    var params = [];
+    // Guard: never send the '__new__' sentinel to the backend — it only has meaning
+    // in the UI (triggers the inline "Create section" form). Belt-and-suspenders
+    // because onSectionFilterChange() already prevents this, but errors from other
+    // callers (e.g. switchTab) could bypass it.
+    if (sectionId && sectionId !== '__new__') params.push('section_id=' + sectionId);
+    if (search)    params.push('q=' + encodeURIComponent(search));
+    if (params.length) url += '?' + params.join('&');
+
+    const data = await apiGet(url);
+
+    // Guard: backend returned an error response or unexpected shape
+    if (!data || !Array.isArray(data.requirements)) {
+      throw new Error('Library API returned unexpected data: ' + JSON.stringify(data));
+    }
+
+    // Get already-linked requirement IDs for this category (to show "✓ Added")
+    var alreadyLinked = new Set();
+    if (state.categoryId) {
+      const detail = await apiGet('/admin-panel/ajax/builder/category/' + state.categoryId + '/');
+      // Guard: check shape before iterating — prevents TypeError if the API returned
+      // an error object (e.g. {error: "..."}) instead of the expected {own_requirements: [...]}
+      if (detail && Array.isArray(detail.own_requirements)) {
+        detail.own_requirements.forEach(function(r) { alreadyLinked.add(r.id); });
+      }
+    }
+
+    renderLibraryResults(data.requirements, alreadyLinked);
+  } catch (e) {
+    // Surface the error visibly — admin should open DevTools → Console for full details
+    console.error('loadLibrary() failed:', e);
+    container.innerHTML = '<div class="panel-empty" style="color:#c0392b;">'
+      + 'Error loading library. Open browser console (F12) for details.</div>';
+  }
+}
+
+async function addFromLibrary(reqId) {
+  if (!state.categoryId) {
+    alert('Select a category first.');
+    return;
+  }
+
+  const res = await apiPost('/admin-panel/ajax/builder/category/' + state.categoryId + '/add-req/', {
+    requirement_id: reqId,
   });
 
   if (!res.ok) {
-    showError('err-category-name', res.errors?.name?.[0] || 'Error creating category.');
+    const msg = (res.errors && res.errors.__all__ && res.errors.__all__[0])
+      || 'Could not add requirement.';
+    alert(msg);
     return;
   }
 
-  // Reset form, close it
-  document.getElementById('new-category-name').value = '';
-  document.getElementById('new-category-desc').value = '';
-  toggleForm('form-new-category');
+  // Mark as added in library list (no full reload needed)
+  const item = document.getElementById('lib-item-' + reqId);
+  if (item) {
+    const btn = item.querySelector('button');
+    if (btn) {
+      btn.outerHTML = '<span style="font-size:0.75rem;color:#2e7d52;">✓ Added</span>';
+    }
+  }
 
-  // Reload the level where the new category was created
-  const depth    = state.categoryPath.length;
-  const reloadId = parentId;
+  // Refresh Tab 1 requirements
+  await reloadRequirements();
+}
 
-  const data = reloadId
-    ? await apiGet(`{% url 'admin_panel:ajax_get_categories' %}?parent_id=${reloadId}`)
-    : await apiGet(`{% url 'admin_panel:ajax_get_categories' %}?service_id=${state.serviceId}`);
+async function addSectionToCategory() {
+  if (!state.categoryId) {
+    alert('Select a category first.');
+    return;
+  }
+  const sectionId = document.getElementById('lib-section-filter').value;
+  if (!sectionId) {
+    alert('Select a section from the filter dropdown first.');
+    return;
+  }
 
-  renderCategoryLevel(data.categories, depth, reloadId);
+  const res = await apiPost(
+    '/admin-panel/ajax/builder/category/' + state.categoryId + '/add-section/',
+    { section_id: sectionId }
+  );
+
+  if (res.ok) {
+    alert('Added ' + res.added + ' requirement(s). Skipped ' + res.skipped + ' (already linked).');
+    await reloadRequirements();
+    loadLibrary();
+  } else {
+    alert('Error adding section.');
+  }
+}
+
+async function removeFromCategory(crId) {
+  /*
+   * Removes the CategoryRequirement bridge row.
+   * The Requirement library item is preserved — it can still be used in other categories.
+   */
+  if (!confirm('Remove this requirement from this category?\n(It stays in the library and can be re-added.)')) return;
+
+  const res = await apiPost(
+    '/admin-panel/ajax/builder/category/' + state.categoryId + '/req/' + crId + '/remove/',
+    {}
+  );
+
+  if (res.ok) {
+    await reloadRequirements();
+  }
+}
+
+// ── Actions: Create requirement (Tab 3) ──────────────────────
+
+function onNewTypeChange() {
+  /*
+   * When type changes to 'select' in Create New form,
+   * user is shown a hint that they can add choices after creation.
+   */
+  const type = document.getElementById('new-req-type').value;
+  // EXPAND: show/hide a "you can add choices after creating" hint if type=select
 }
 
 async function createRequirement() {
@@ -769,141 +1720,809 @@ async function createRequirement() {
   const name        = document.getElementById('new-req-name').value.trim();
   const type        = document.getElementById('new-req-type').value;
   const desc        = document.getElementById('new-req-desc').value.trim();
+  const sectionId   = document.getElementById('new-req-section').value || null;
+  const mapping     = document.getElementById('new-req-mapping').value.trim();
   const is_required = document.getElementById('new-req-required').checked;
 
-  const res = await apiPost(`{% url 'admin_panel:ajax_create_requirement' %}`, {
-    name, type, description: desc, is_required,
-    category_id: state.categoryId
+  const res = await apiPost('/admin-panel/ajax/builder/library/create/', {
+    name:            name,
+    type:            type,
+    description:     desc,
+    is_required:     is_required,
+    section_id:      sectionId,
+    category_id:     state.categoryId,   // also link to current category
+    profile_mapping: mapping,
   });
 
   if (!res.ok) {
-    const errMsg = res.errors?.name?.[0] || res.errors?.type?.[0] || 'Error creating requirement.';
+    const errMsg = (res.errors && (res.errors.name || res.errors.type))
+      ? (res.errors.name || res.errors.type)[0]
+      : 'Error creating requirement.';
     showError('err-req-name', errMsg);
     return;
   }
 
-  // Reset form, close it, reload requirements
-  document.getElementById('new-req-name').value  = '';
-  document.getElementById('new-req-type').value  = '';
-  document.getElementById('new-req-desc').value  = '';
+  // Reset form
+  document.getElementById('new-req-name').value    = '';
+  document.getElementById('new-req-type').value    = '';
+  document.getElementById('new-req-desc').value    = '';
+  document.getElementById('new-req-mapping').value = '';
   document.getElementById('new-req-required').checked = true;
-  toggleForm('form-new-requirement');
 
-  // Reload category detail
-  const detail = await apiGet(`/admin-panel/ajax/builder/category/${state.categoryId}/`);
-  renderRequirements(
-    detail.own_requirements,
-    detail.inherited,
-    state.categoryPath[state.categoryPath.length - 1]?.name || ''
-  );
+  // Reload Tab 1 and switch to it
+  await reloadRequirements();
+  switchTab('this');
+
+  // If new requirement is select-type, prompt user to add choices now
+  if (res.requirement && res.requirement.type === 'select') {
+    alert('Requirement created. Switch to "This Category" tab and click "Choices" to add dropdown options.');
+  }
 }
 
-// ── Edit requirement ──────────────────────────────────────────
+// ── Actions: Edit requirement (library item edit) ─────────────
 
 function toggleReqEdit(reqId) {
-  const form = document.getElementById(`req-edit-${reqId}`);
+  const form = document.getElementById('req-edit-' + reqId);
   if (form) form.classList.toggle('open');
 }
 
 async function saveRequirement(reqId) {
-  clearError(`err-req-edit-${reqId}`);
+  clearError('err-req-edit-' + reqId);
 
-  const name        = document.getElementById(`edit-req-name-${reqId}`).value.trim();
-  const type        = document.getElementById(`edit-req-type-${reqId}`).value;
-  const desc        = document.getElementById(`edit-req-desc-${reqId}`).value.trim();
-  const is_required = document.getElementById(`edit-req-required-${reqId}`).checked;
-  const is_active   = document.getElementById(`edit-req-active-${reqId}`).checked;
+  const name        = document.getElementById('edit-req-name-' + reqId).value.trim();
+  const type        = document.getElementById('edit-req-type-' + reqId).value;
+  const desc        = document.getElementById('edit-req-desc-' + reqId).value.trim();
+  const mapping       = document.getElementById('edit-req-mapping-' + reqId).value.trim();
+  // Phase 3: managed_profile_mapping — auto-fill from the interior person's own data
+  const mp_mapping    = document.getElementById('edit-req-mp-mapping-' + reqId).value.trim();
+  const form_field_id = document.getElementById('edit-req-form-field-id-' + reqId).value.trim();
+  const is_required   = document.getElementById('edit-req-required-' + reqId).checked;
+  const is_active     = document.getElementById('edit-req-active-' + reqId).checked;
+  // Section picker — value is a section PK (string) or "" (Uncategorized).
+  // Send null for empty so the backend clears the section cleanly (stores None, not "").
+  const sectionId     = document.getElementById('edit-req-section-' + reqId).value || null;
+
+  // Phase 4: eligibility gate fields — read from the collapsible eligibility section.
+  // Guard with getElementById() check: old requirement rows (rendered before Phase 4
+  // was added) might not have these elements if cached HTML is stale.
+  var eligEl  = document.getElementById('edit-req-elig-' + reqId);
+  var eligOpEl = document.getElementById('edit-req-elig-op-' + reqId);
+  var eligValEl = document.getElementById('edit-req-elig-val-' + reqId);
+  var eligMsgEl = document.getElementById('edit-req-elig-msg-' + reqId);
+  const is_eligibility      = eligEl    ? eligEl.checked          : false;
+  const eligibility_operator = eligOpEl ? eligOpEl.value          : '';
+  const eligibility_value    = eligValEl ? eligValEl.value.trim() : '';
+  const eligibility_fail_msg = eligMsgEl ? eligMsgEl.value.trim() : '';
 
   const res = await apiPost(
-    `/admin-panel/ajax/builder/requirement/${reqId}/edit/`,
-    { name, type, description: desc, is_required, is_active }
+    '/admin-panel/ajax/builder/requirement/' + reqId + '/edit/',
+    {
+      name: name, type: type, description: desc,
+      profile_mapping:          mapping,
+      managed_profile_mapping:  mp_mapping,    // Phase 3: interior person auto-fill
+      form_field_id:            form_field_id, // Phase 4: gov. form field for scrapers
+      section_id:               sectionId,     // null → Uncategorized, numeric string → move
+      is_required: is_required, is_active: is_active,
+      // Phase 4: eligibility gate
+      is_eligibility:           is_eligibility,
+      eligibility_operator:     eligibility_operator,
+      eligibility_value:        eligibility_value,
+      eligibility_fail_message: eligibility_fail_msg,
+    }
   );
 
   if (!res.ok) {
-    const errMsg = res.errors?.name?.[0] || 'Error saving requirement.';
-    showError(`err-req-edit-${reqId}`, errMsg);
+    const errMsg = (res.errors && res.errors.name) ? res.errors.name[0] : 'Error saving.';
+    showError('err-req-edit-' + reqId, errMsg);
     return;
   }
 
-  // Reload requirements panel
-  const detail = await apiGet(`/admin-panel/ajax/builder/category/${state.categoryId}/`);
-  renderRequirements(
-    detail.own_requirements,
-    detail.inherited,
-    state.categoryPath[state.categoryPath.length - 1]?.name || ''
+  await reloadRequirements();
+}
+
+// ── Actions: Choices (for select-type requirements) ───────────
+
+async function toggleChoices(reqId, crId) {
+  /*
+   * Shows/hides the choices panel for a requirement.
+   * Loads choice data from server on first open.
+   * crId is passed for context but not used in this function.
+   */
+  const panel = document.getElementById('choices-panel-' + reqId);
+  if (!panel) return;
+
+  if (panel.classList.contains('open')) {
+    panel.classList.remove('open');
+    return;
+  }
+
+  panel.classList.add('open');
+  await reloadChoices(reqId);
+}
+
+async function reloadChoices(reqId) {
+  const listEl = document.getElementById('choices-list-' + reqId);
+  if (!listEl) return;
+
+  const data = await apiGet('/admin-panel/ajax/builder/requirement/' + reqId + '/choices/');
+
+  if (!data.choices.length) {
+    listEl.innerHTML = '<em style="color:var(--slate);">No options yet. Add one below.</em>';
+    return;
+  }
+
+  listEl.innerHTML = data.choices.map(function(c) {
+    return '<div class="choice-row" id="choice-row-' + c.id + '">'
+      + '<span class="choice-label">' + escHtml(c.label) + '</span>'
+      + '<span class="choice-value">' + escHtml(c.value) + '</span>'
+      + '<button class="btn btn-sm btn-danger" style="font-size:0.7rem;"'
+      + ' onclick="deleteChoice(' + c.id + ',' + reqId + ')">✕</button>'
+      + '</div>';
+  }).join('');
+}
+
+async function createChoice(reqId) {
+  clearError('err-choice-' + reqId);
+
+  const label = document.getElementById('new-choice-label-' + reqId).value.trim();
+  const value = document.getElementById('new-choice-value-' + reqId).value.trim();
+
+  if (!label) {
+    showError('err-choice-' + reqId, 'Label is required.');
+    return;
+  }
+
+  const res = await apiPost(
+    '/admin-panel/ajax/builder/requirement/' + reqId + '/choices/create/',
+    { label: label, value: value || label }   // default value = label
   );
+
+  if (!res.ok) {
+    const errMsg = (res.errors && res.errors.label) ? res.errors.label[0] : 'Error adding option.';
+    showError('err-choice-' + reqId, errMsg);
+    return;
+  }
+
+  // Reset inputs and reload list
+  document.getElementById('new-choice-label-' + reqId).value = '';
+  document.getElementById('new-choice-value-' + reqId).value = '';
+  await reloadChoices(reqId);
 }
 
-// ── Utility ────────────────────────────────────────────────────
-// Escapes HTML special chars to prevent XSS when inserting
-// user-provided content into innerHTML.
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+async function deleteChoice(choiceId, reqId) {
+  if (!confirm('Delete this option? Existing answers using it will lose their choice reference.')) return;
+  const res = await apiPost('/admin-panel/ajax/builder/choice/' + choiceId + '/delete/', {});
+  if (res.ok) await reloadChoices(reqId);
 }
 
-// ── Init ───────────────────────────────────────────────────────
-// Load services when the page opens.
-loadServices();
+// ── Helper: reload requirements after any change ──────────────
+async function reloadRequirements() {
+  if (!state.categoryId) return;
+  const detail = await apiGet('/admin-panel/ajax/builder/category/' + state.categoryId + '/');
+  const name   = state.categoryPath.length
+    ? state.categoryPath[state.categoryPath.length - 1].name
+    : '';
+  renderRequirements(detail.own_requirements, detail.inherited, name);
+}
 
-// ── Delete ───────────────────────────────────────────────────────
+// ── Delete: Service / Category ────────────────────────────────
+
 async function deleteService(id) {
   if (!confirm('Delete this service? All its categories will be deactivated.')) return;
-  const res = await apiPost(`/admin-panel/ajax/builder/service/${id}/delete/`, {});
+  const res = await apiPost('/admin-panel/ajax/builder/service/' + id + '/delete/', {});
   if (res.ok) {
-    // If deleted service was selected, reset state
     if (state.serviceId === id) {
       state.serviceId    = null;
       state.serviceName  = '';
       state.categoryId   = null;
       state.categoryPath = [];
-      // Clear panels
       document.getElementById('category-chain-container').innerHTML =
         '<div class="panel-empty" id="categories-empty">Select a service to view its categories.</div>';
       document.getElementById('requirements-list').innerHTML =
         '<div class="panel-empty">Select a category to view its requirements.</div>';
-      document.getElementById('btn-add-category').style.display     = 'none';
-      document.getElementById('btn-add-requirement').style.display  = 'none';
-      document.getElementById('category-breadcrumb').style.display  = 'none';
+      document.getElementById('btn-add-category').style.display    = 'none';
+      document.getElementById('req-tab-bar').style.display         = 'none';
+      document.getElementById('category-breadcrumb').style.display = 'none';
     }
     loadServices();
   }
 }
 
 async function deleteCategory(id, depth, parentId) {
-  if (!confirm('Delete this category? Its subcategories and requirements will also be deactivated.')) return;
-  const res = await apiPost(`/admin-panel/ajax/builder/category/${id}/delete/`, {});
+  if (!confirm('Delete this category? Subcategories and requirements will also be deactivated.')) return;
+  const res = await apiPost('/admin-panel/ajax/builder/category/' + id + '/delete/', {});
   if (res.ok) {
-    // If deleted category was selected, clear requirements panel
     if (state.categoryId === id) {
       state.categoryId   = null;
       state.categoryPath = state.categoryPath.slice(0, depth);
       document.getElementById('requirements-list').innerHTML =
         '<div class="panel-empty">Select a category to view its requirements.</div>';
-      document.getElementById('btn-add-requirement').style.display = 'none';
+      document.getElementById('req-tab-bar').style.display = 'none';
     }
-    // Reload this level
     const data = parentId
-      ? await apiGet(`{% url 'admin_panel:ajax_get_categories' %}?parent_id=${parentId}`)
-      : await apiGet(`{% url 'admin_panel:ajax_get_categories' %}?service_id=${state.serviceId}`);
+      ? await apiGet('{% url "admin_panel:ajax_get_categories" %}?parent_id=' + parentId)
+      : await apiGet('{% url "admin_panel:ajax_get_categories" %}?service_id=' + state.serviceId);
     renderCategoryLevel(data.categories, depth, parentId);
   }
 }
 
-async function deleteRequirement(id) {
-  if (!confirm('Delete this requirement? It will be hidden from new cases but existing cases keep it.')) return;
-  const res = await apiPost(`/admin-panel/ajax/builder/requirement/${id}/delete/`, {});
+// ── Services: Create ──────────────────────────────────────────
+
+async function createService() {
+  clearError('err-service-name');
+  const name = document.getElementById('new-service-name').value.trim();
+  const desc = document.getElementById('new-service-desc').value.trim();
+
+  const res = await apiPost('{% url "admin_panel:ajax_create_service" %}', {
+    name: name, description: desc
+  });
+
+  if (!res.ok) {
+    showError('err-service-name', (res.errors && res.errors.name && res.errors.name[0]) || 'Error creating service.');
+    return;
+  }
+
+  document.getElementById('new-service-name').value = '';
+  document.getElementById('new-service-desc').value = '';
+  toggleForm('form-new-service');
+  loadServices();
+}
+
+// ── Categories: Create ────────────────────────────────────────
+
+async function createCategory() {
+  clearError('err-category-name');
+
+  if (!state.serviceId) {
+    showError('err-category-name', 'Select a service first.');
+    return;
+  }
+
+  const name     = document.getElementById('new-category-name').value.trim();
+  const desc     = document.getElementById('new-category-desc').value.trim();
+  const parentId = state.categoryPath.length
+    ? state.categoryPath[state.categoryPath.length - 1].id
+    : null;
+
+  const res = await apiPost('{% url "admin_panel:ajax_create_category" %}', {
+    name: name, description: desc,
+    service_id: state.serviceId, parent_id: parentId,
+  });
+
+  if (!res.ok) {
+    showError('err-category-name', (res.errors && res.errors.name && res.errors.name[0]) || 'Error creating category.');
+    return;
+  }
+
+  document.getElementById('new-category-name').value = '';
+  document.getElementById('new-category-desc').value = '';
+  toggleForm('form-new-category');
+
+  const depth    = state.categoryPath.length;
+  const reloadId = parentId;
+  const data     = reloadId
+    ? await apiGet('{% url "admin_panel:ajax_get_categories" %}?parent_id=' + reloadId)
+    : await apiGet('{% url "admin_panel:ajax_get_categories" %}?service_id=' + state.serviceId);
+
+  renderCategoryLevel(data.categories, depth, reloadId);
+}
+
+// ══════════════════════════════════════════════════════════════
+// Phase 4 — Government Forms Library
+// ══════════════════════════════════════════════════════════════
+
+// ── Forms Library: Panel 1 ────────────────────────────────────
+
+// Toggle the Forms Library section in Panel 1 (show/hide).
+// WHY collapsible: the panel can get tall; admins working only on services
+// shouldn't have to scroll past a long form list every time.
+function toggleFormsSection() {
+  var section = document.getElementById('forms-library-section');
+  var arrow   = document.getElementById('forms-section-arrow');
+  if (!section) return;
+  var isHidden = section.style.display === 'none';
+  section.style.display = isHidden ? '' : 'none';
+  arrow.textContent     = isHidden ? '▾' : '▸';
+}
+
+// Load all active GovernmentForms and render them in #form-list.
+// Also refreshes the "Link Form" select in the category Forms tab.
+async function loadForms() {
+  var searchEl  = document.getElementById('form-search');
+  var searchVal = searchEl ? searchEl.value.trim() : '';
+  var url       = '/admin-panel/ajax/builder/forms/';
+  if (searchVal) url += '?q=' + encodeURIComponent(searchVal);
+
+  var data = await apiGet(url);
+  renderFormList(data.forms || []);
+  populateFormSelect(data.forms || []);   // keep category Forms-tab select up to date
+}
+
+// Render the list of forms in Panel 1.
+function renderFormList(forms) {
+  var container = document.getElementById('form-list');
+  if (!forms.length) {
+    container.innerHTML = '<div class="panel-empty">No forms yet. Click + New Form below.</div>';
+    return;
+  }
+  container.innerHTML = forms.map(function(f) {
+    // Selected form gets amber background (same pattern as service/category items)
+    return '<div class="form-item ' + (f.id === state.formId ? 'selected' : '') + '"'
+      + ' onclick="selectForm(' + f.id + ', \'' + escHtml(f.code) + '\', \'' + escHtml(f.name) + '\')">'
+      + '<div>'
+      + '<div class="form-item-name">' + escHtml(f.code) + ' &mdash; ' + escHtml(f.name) + '</div>'
+      + '<div class="form-item-meta">' + f.req_count + ' req &middot; ' + f.category_count + ' cat</div>'
+      + '</div>'
+      + '<div style="display:flex;align-items:center;gap:0.35rem;">'
+      + '<span class="panel-item-arrow">&#8250;</span>'
+      + '<button class="btn-delete"'
+      + ' onclick="event.stopPropagation();deleteForm(' + f.id + ')"'
+      + ' title="Delete form">&#10005;</button>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+// Populate the "Select a form to link" dropdown in the category Forms tab.
+// WHY separate function: called by loadForms() so the dropdown stays in sync
+// without an extra API round-trip when the category tab is open.
+function populateFormSelect(forms) {
+  var sel = document.getElementById('link-form-select');
+  if (!sel) return;
+  var current = sel.value;               // preserve current selection if any
+  while (sel.options.length > 1) sel.remove(1);
+  forms.forEach(function(f) {
+    sel.add(new Option(f.code + ' \u2014 ' + f.name, f.id));
+  });
+  // Restore previous selection (in case dropdown was already pointing at something)
+  if (current) sel.value = current;
+}
+
+// Populate the "Add requirement from library" select inside the form detail panel.
+// Called once when a form is selected (selectForm) — refreshes from the full library.
+async function populateFormReqSelect() {
+  var sel = document.getElementById('form-add-req-select');
+  if (!sel) return;
+  var data = await apiGet('/admin-panel/ajax/builder/library/');
+  while (sel.options.length > 1) sel.remove(1);
+  (data.requirements || []).forEach(function(r) {
+    sel.add(new Option(r.name + ' (' + r.type + ')', r.id));
+  });
+}
+
+// ── Form Detail: Panel 3 ──────────────────────────────────────
+
+// Select a form: switch Panel 3 from category mode → form detail mode.
+async function selectForm(id, code, name) {
+  state.formId   = id;
+  state.formName = name;
+  state.mode     = 'form';
+
+  // Update Panel 3 title
+  document.getElementById('panel3-title').textContent = code + ' \u2014 ' + name;
+
+  // Hide the category tab bar + all tab content panels
+  document.getElementById('req-tab-bar').style.display = 'none';
+  document.querySelectorAll('.req-tab-content').forEach(function(el) {
+    el.style.display = 'none';
+  });
+
+  // Show form detail panel
+  document.getElementById('form-detail-panel').style.display = 'flex';
+
+  // Refresh Panel 1 form list to show selection highlight
+  loadForms();
+
+  // Load form detail content and library selector
+  await reloadFormDetail();
+  await populateFormReqSelect();
+}
+
+// Clear form detail — return Panel 3 to normal category mode.
+// Called by "✕ Close" button in form detail header.
+function clearFormDetail() {
+  state.formId   = null;
+  state.formName = '';
+  state.mode     = 'category';
+
+  document.getElementById('panel3-title').textContent = 'Requirements';
+  document.getElementById('form-detail-panel').style.display = 'none';
+
+  // Only restore category tab bar if a category is still selected
+  if (state.categoryId) {
+    document.getElementById('req-tab-bar').style.display = '';
+    document.querySelectorAll('.req-tab-content').forEach(function(el) {
+      el.style.display = '';     // let CSS .active class control visibility
+    });
+    switchTab('this');           // switch back to requirements tab
+  }
+
+  // Refresh form list so selection highlight is cleared
+  loadForms();
+}
+
+// Fetch and render the full form detail in Panel 3.
+async function reloadFormDetail() {
+  if (!state.formId) return;
+  var data = await apiGet('/admin-panel/ajax/builder/form/' + state.formId + '/');
+
+  // ── Header ──
+  document.getElementById('form-detail-title').textContent =
+    data.form.code + ' \u2014 ' + data.form.name;
+  document.getElementById('form-detail-meta').textContent =
+    data.form.req_count + ' requirements \u00b7 ' + data.form.category_count + ' categories';
+
+  // ── Source URL ──
+  var urlDiv   = document.getElementById('form-detail-url');
+  var noUrlDiv = document.getElementById('form-detail-no-url');
+  var urlLink  = document.getElementById('form-detail-url-link');
+  if (data.form.source_url) {
+    urlLink.href         = data.form.source_url;
+    urlLink.textContent  = data.form.source_url;
+    urlDiv.style.display   = '';
+    noUrlDiv.style.display = 'none';
+  } else {
+    urlDiv.style.display   = 'none';
+    noUrlDiv.style.display = '';
+  }
+
+  // ── Tab content ──
+  renderFormRequirements(data.requirements || []);
+  renderFormCategories(data.categories || []);
+}
+
+// Render requirements inside a form, grouped by form_section.
+function renderFormRequirements(reqs) {
+  var container = document.getElementById('form-reqs-list');
+  if (!reqs.length) {
+    container.innerHTML = '<div class="panel-empty" style="padding:1rem;">'
+      + 'No requirements linked yet. Add from the library above.</div>';
+    return;
+  }
+
+  // Group by form_section — preserves the order they came from the server
+  var sections = {};   // section_name → []
+  var order    = [];   // ordered list of section names (first-seen order)
+  reqs.forEach(function(r) {
+    var sec = r.form_section || '(General)';
+    if (!sections[sec]) { sections[sec] = []; order.push(sec); }
+    sections[sec].push(r);
+  });
+
+  var html = '';
+  order.forEach(function(sec) {
+    html += '<div class="lib-section-header">' + escHtml(sec) + '</div>';
+    sections[sec].forEach(function(r) {
+      // Eligibility badge — same style as used in the requirements list
+      var eligBadge = r.is_eligibility
+        ? '<span class="elig-badge" title="Eligibility gate">&#9873;</span>'
+        : '';
+      // field_id hint — the form-specific field identifier used by scrapers
+      var fieldHint = r.field_id
+        ? '<span style="font-size:0.68rem;color:var(--slate);margin-left:0.3em;">'
+          + escHtml(r.field_id) + '</span>'
+        : '';
+      html += '<div class="lib-item">'
+        + '<div class="lib-item-info">'
+        + '<div class="lib-item-name">' + escHtml(r.name) + eligBadge + fieldHint + '</div>'
+        + '<div class="lib-item-meta"><span class="type-badge" style="margin-left:0;">'
+        + escHtml(r.type) + '</span></div>'
+        + '</div>'
+        // Remove button — removes FormRequirement bridge row; Requirement stays in library
+        + '<button class="btn btn-sm btn-danger" onclick="removeReqFromForm(' + r.fr_id + ')"'
+        + ' title="Remove from form (keeps in library)">Remove</button>'
+        + '</div>';
+    });
+  });
+  container.innerHTML = html;
+}
+
+// Render the "Used In Categories" list for the current form.
+function renderFormCategories(cats) {
+  var container = document.getElementById('form-cats-list');
+  if (!cats.length) {
+    container.innerHTML = '<div class="panel-empty">Not linked to any categories yet.</div>';
+    return;
+  }
+  container.innerHTML = '<div style="font-size:0.82rem;">'
+    + cats.map(function(c) {
+        return '<div style="padding:0.4rem 0; border-bottom:1px solid var(--border);">'
+          + escHtml(c.name) + '</div>';
+      }).join('')
+    + '</div>';
+}
+
+// Switch between Requirements / Used In Categories tabs inside form detail.
+function switchFormTab(name) {
+  var isReqs = (name === 'reqs');
+  document.getElementById('ftab-reqs').style.display  = isReqs ? ''      : 'none';
+  document.getElementById('ftab-cats').style.display  = isReqs ? 'none'  : '';
+  document.getElementById('ftab-btn-reqs').classList.toggle('active', isReqs);
+  document.getElementById('ftab-btn-cats').classList.toggle('active', !isReqs);
+}
+
+// ── Form CRUD ─────────────────────────────────────────────────
+
+// Create a new GovernmentForm from the inline form in Panel 1.
+async function createForm() {
+  clearError('err-form-name');
+  var code = document.getElementById('new-form-code').value.trim();
+  var name = document.getElementById('new-form-name-input').value.trim();
+  var desc = document.getElementById('new-form-desc').value.trim();
+  var url  = document.getElementById('new-form-url').value.trim();
+
+  if (!code) { showError('err-form-name', 'Form code is required (e.g. IMM5710).'); return; }
+  if (!name) { showError('err-form-name', 'Form name is required.'); return; }
+
+  var res = await apiPost('/admin-panel/ajax/builder/form/create/', {
+    code: code, name: name, description: desc, source_url: url,
+  });
+
+  if (!res.ok) {
+    var msg = (res.errors && Object.values(res.errors).flat()[0]) || 'Error creating form.';
+    showError('err-form-name', msg);
+    return;
+  }
+
+  // Reset inline form and hide it
+  document.getElementById('new-form-code').value       = '';
+  document.getElementById('new-form-name-input').value = '';
+  document.getElementById('new-form-desc').value       = '';
+  document.getElementById('new-form-url').value        = '';
+  toggleForm('form-new-form');
+
+  // Reload list then immediately open the new form's detail panel
+  await loadForms();
+  if (res.form) selectForm(res.form.id, res.form.code, res.form.name);
+}
+
+// Delete a GovernmentForm. Cascades to FormRequirement and CategoryForm rows.
+async function deleteForm(id) {
+  if (!confirm('Delete this form? All links to categories and requirements will be removed.')) return;
+  var res = await apiPost('/admin-panel/ajax/builder/form/' + id + '/delete/', {});
   if (res.ok) {
-    const detail = await apiGet(`/admin-panel/ajax/builder/category/${state.categoryId}/`);
-    renderRequirements(
-      detail.own_requirements,
-      detail.inherited,
-      state.categoryPath[state.categoryPath.length - 1]?.name || ''
-    );
+    if (state.formId === id) clearFormDetail();   // close detail panel if open
+    loadForms();
+  } else {
+    alert('Could not delete form.');
   }
 }
+
+// Open the Edit Form modal, pre-populated with the current form's data.
+async function showEditFormModal() {
+  if (!state.formId) return;
+  var data = await apiGet('/admin-panel/ajax/builder/form/' + state.formId + '/');
+  var f    = data.form;
+  document.getElementById('edit-form-code').value       = f.code;
+  document.getElementById('edit-form-name-modal').value = f.name;
+  document.getElementById('edit-form-desc-modal').value = f.description || '';
+  document.getElementById('edit-form-url-modal').value  = f.source_url  || '';
+  clearError('err-edit-form');
+  document.getElementById('edit-form-modal').classList.add('open');
+}
+
+// Submit the Edit Form modal — saves changed data via ajax_edit_form.
+async function submitEditForm() {
+  clearError('err-edit-form');
+  var code = document.getElementById('edit-form-code').value.trim();
+  var name = document.getElementById('edit-form-name-modal').value.trim();
+  var desc = document.getElementById('edit-form-desc-modal').value.trim();
+  var url  = document.getElementById('edit-form-url-modal').value.trim();
+
+  if (!code) { showError('err-edit-form', 'Code is required.'); return; }
+  if (!name) { showError('err-edit-form', 'Name is required.'); return; }
+
+  var res = await apiPost('/admin-panel/ajax/builder/form/' + state.formId + '/edit/', {
+    code: code, name: name, description: desc, source_url: url,
+  });
+
+  if (!res.ok) {
+    var msg = (res.errors && Object.values(res.errors).flat()[0]) || 'Error saving.';
+    showError('err-edit-form', msg);
+    return;
+  }
+
+  document.getElementById('edit-form-modal').classList.remove('open');
+  loadForms();
+  await reloadFormDetail();   // refresh header with new code/name
+}
+
+// ── Form ↔ Requirement linking ────────────────────────────────
+
+// Add a requirement from library to the currently open form.
+async function addReqToForm() {
+  var sel   = document.getElementById('form-add-req-select');
+  var reqId = sel ? parseInt(sel.value, 10) : 0;
+  if (!reqId || !state.formId) { alert('Select a requirement first.'); return; }
+
+  var res = await apiPost('/admin-panel/ajax/builder/form/' + state.formId + '/add-req/', {
+    requirement_id: reqId,
+  });
+
+  if (!res.ok) {
+    var msg = (res.errors && Object.values(res.errors).flat()[0])
+      || (res.error)
+      || 'Could not add requirement.';
+    alert(msg);
+    return;
+  }
+
+  await reloadFormDetail();   // refresh requirements list in form detail
+}
+
+// Remove a requirement from the current form (via FormRequirement bridge row id).
+async function removeReqFromForm(frId) {
+  if (!confirm('Remove this requirement from the form? (It stays in the library.)')) return;
+  var res = await apiPost(
+    '/admin-panel/ajax/builder/form/' + state.formId + '/req/' + frId + '/remove/',
+    {}
+  );
+  if (res.ok) await reloadFormDetail();
+}
+
+// ── Category ↔ Form linking ───────────────────────────────────
+
+// Load and render forms linked to the currently selected category (Forms tab).
+async function loadFormsForCategory() {
+  if (!state.categoryId) return;
+
+  var container = document.getElementById('category-forms-list');
+  container.innerHTML = '<div class="panel-empty">Loading...</div>';
+
+  var data = await apiGet('/admin-panel/ajax/builder/category/' + state.categoryId + '/forms/');
+
+  renderFormsForCategory(data.forms || [], data.summary || []);
+
+  // Update the badge on the "Forms" tab button
+  var badge = document.getElementById('forms-tab-badge');
+  if (badge) {
+    var count = (data.forms || []).length;
+    badge.textContent   = count;
+    badge.style.display = count > 0 ? '' : 'none';
+  }
+}
+
+// Render the linked forms + deduped summary for the current category.
+function renderFormsForCategory(forms, summary) {
+  var container = document.getElementById('category-forms-list');
+  var html = '';
+
+  if (!forms.length) {
+    html += '<div class="panel-empty" style="padding:1rem;">'
+      + 'No forms linked yet. Use the selector below to link a form.</div>';
+  } else {
+    forms.forEach(function(f) {
+      html += '<div class="lib-item">'
+        + '<div class="lib-item-info">'
+        + '<div class="lib-item-name">' + escHtml(f.code) + ' &mdash; ' + escHtml(f.name) + '</div>'
+        + '<div class="lib-item-meta">' + f.req_count + ' requirements</div>'
+        + '</div>'
+        + '<div style="display:flex;gap:0.3rem;">'
+        // "View" opens the form in Panel 3 form detail mode
+        + '<button class="btn btn-sm btn-outline"'
+        + ' onclick="selectForm(' + f.id + ',\'' + escHtml(f.code) + '\',\'' + escHtml(f.name) + '\')">View</button>'
+        // "Remove" deletes the CategoryForm bridge row; form stays in library
+        + '<button class="btn btn-sm btn-danger" onclick="removeFormFromCategory(' + f.cf_id + ')">Remove</button>'
+        + '</div>'
+        + '</div>';
+    });
+
+    // Summary: all unique requirements across all linked forms (deduped by backend)
+    // WHY: an admin can see at a glance what questions this category will need without
+    // opening each form individually. Useful for spotting duplicates.
+    if (summary.length) {
+      html += '<div class="lib-section-header">'
+        + 'Summary &mdash; All Unique Requirements (' + summary.length + ')'
+        + '</div>';
+      summary.forEach(function(r) {
+        var eligBadge = r.is_eligibility
+          ? '<span class="elig-badge">&#9873;</span>'
+          : '';
+        html += '<div class="lib-item">'
+          + '<div class="lib-item-info">'
+          + '<div class="lib-item-name">' + escHtml(r.name) + eligBadge + '</div>'
+          + '<div class="lib-item-meta">'
+          + '<span class="type-badge" style="margin-left:0;">' + escHtml(r.type) + '</span>'
+          + ' &middot; ' + escHtml((r.form_codes || []).join(', '))
+          + '</div>'
+          + '</div>'
+          + '</div>';
+      });
+    }
+  }
+
+  container.innerHTML = html;
+}
+
+// Link a GovernmentForm to the currently selected category.
+async function addFormToCategory() {
+  var sel    = document.getElementById('link-form-select');
+  var formId = sel ? parseInt(sel.value, 10) : 0;
+  if (!formId || !state.categoryId) { alert('Select a form first.'); return; }
+
+  var res = await apiPost(
+    '/admin-panel/ajax/builder/category/' + state.categoryId + '/add-form/',
+    { form_id: formId }
+  );
+
+  if (!res.ok) {
+    var msg = (res.errors && Object.values(res.errors).flat()[0])
+      || (res.error)
+      || 'Could not link form.';
+    alert(msg);
+    return;
+  }
+
+  loadFormsForCategory();   // refresh the tab
+}
+
+// Remove a form from the currently selected category (via CategoryForm id).
+async function removeFormFromCategory(cfId) {
+  if (!confirm('Remove this form from the category?')) return;
+  var res = await apiPost(
+    '/admin-panel/ajax/builder/category/' + state.categoryId + '/form/' + cfId + '/remove/',
+    {}
+  );
+  if (res.ok) loadFormsForCategory();
+}
+
+// ── Eligibility toggle ────────────────────────────────────────
+
+// Toggle the collapsible eligibility fields panel in the requirement edit form.
+// Called by both the arrow/label click and the checkbox onchange event.
+function toggleEligibility(reqId) {
+  var checkbox = document.getElementById('edit-req-elig-' + reqId);
+  var fields   = document.getElementById('elig-fields-' + reqId);
+  var arrow    = document.getElementById('elig-arrow-' + reqId);
+  if (!fields || !checkbox) return;
+
+  // When called from the arrow/div (not the checkbox), toggle the checkbox too.
+  // WHY: the whole row is clickable, not just the checkbox, so we need to sync state.
+  if (document.activeElement !== checkbox) {
+    checkbox.checked = !checkbox.checked;
+  }
+
+  var isOpen = checkbox.checked;
+  fields.classList.toggle('open', isOpen);
+  arrow.textContent = isOpen ? '▾' : '▸';
+}
+
+// ── Import from URL modal ─────────────────────────────────────
+
+// Open the Import URL modal (shown when admin clicks "↓ Import from URL").
+function openImportModal() {
+  document.getElementById('import-url-input').value = '';
+  clearError('err-import-url');
+  document.getElementById('import-url-modal').classList.add('open');
+}
+
+function closeImportModal() {
+  document.getElementById('import-url-modal').classList.remove('open');
+}
+
+// Submit the URL — saves it to GovernmentForm.source_url via ajax_import_from_url.
+// The crawler is not yet implemented; the URL is stored for future use.
+async function submitImportUrl() {
+  clearError('err-import-url');
+  var url = document.getElementById('import-url-input').value.trim();
+  if (!url) { showError('err-import-url', 'Please enter a URL.'); return; }
+  if (!state.formId) { closeImportModal(); return; }
+
+  var res = await apiPost('/admin-panel/ajax/builder/import/', {
+    form_id: state.formId,
+    url:     url,
+  });
+
+  closeImportModal();
+  // Show the server's message (either "URL saved" or "crawler not yet implemented")
+  alert(res.message || (res.ok ? 'URL saved.' : 'Error saving URL.'));
+  if (res.ok) await reloadFormDetail();   // refresh header to show the updated source URL
+}
+
+// ── Init ──────────────────────────────────────────────────────
+// Load services and sections when the page first opens.
+loadServices();
+loadSections();
+loadForms();
 </script>
 {% endblock %}

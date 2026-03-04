@@ -1,0 +1,67 @@
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Link Account &mdash; {{ managed.full_name }}{% endblock %}
+{% block topbar_title %}Link Account{% endblock %}
+
+{% block content %}
+<div style="max-width:520px;">
+
+  <div class="text-muted text-small mb-2">
+    <a href="{% url 'admin_panel:group_list' %}" style="color:var(--amber);">Groups</a>
+    &rsaquo;
+    <a href="{% url 'admin_panel:group_detail' group.id %}" style="color:var(--amber);">{{ group.name }}</a>
+    &rsaquo; Link Account
+  </div>
+
+  <div class="card">
+    <div class="card-header">Link Profile to User Account</div>
+    <div style="padding:1.5rem;">
+
+      <!-- Show the managed profile being linked -->
+      <div style="background:var(--sidebar-bg,#0f1923); color:#fff; border:1px solid var(--border);
+                  padding:0.75rem 1rem; margin-bottom:1.5rem; font-size:0.875rem;">
+        <div class="text-muted text-small" style="margin-bottom:0.25rem;">Interior person</div>
+        <div style="font-weight:500; font-size:1rem;">{{ managed.full_name }}</div>
+        {% if managed.date_of_birth %}
+          <div class="text-muted text-small" style="margin-top:0.25rem;">
+            Born: {{ managed.date_of_birth|date:"M d, Y" }}
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- Explain what linking does — admin needs to understand the consequence -->
+      <div style="font-size:0.84rem; opacity:0.8; margin-bottom:1.5rem; line-height:1.6;">
+        <strong>What this does:</strong> connects this interior person&rsquo;s profile to an existing
+        user account so they can log in and view their own cases.<br><br>
+        <strong>Requirement:</strong> the person must already have a registered account.
+        If not, create their account first under
+        <a href="{% url 'admin_panel:create_user' %}" style="color:var(--amber);">Users &rarr; Create User</a>.
+      </div>
+
+      <form method="POST" novalidate>
+        {% csrf_token %}
+
+        <div class="form-group">
+          <label for="{{ form.email.id_for_label }}">{{ form.email.label }}</label>
+          {{ form.email }}
+          {% if form.email.help_text %}
+            <p class="text-muted text-small" style="margin-top:0.3rem;">{{ form.email.help_text }}</p>
+          {% endif %}
+          {% if form.email.errors %}
+            <div class="message message-error" style="margin-top:0.5rem;">{{ form.email.errors }}</div>
+          {% endif %}
+        </div>
+
+        {% if form.non_field_errors %}
+          <div class="message message-error">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <div style="display:flex; gap:0.75rem; margin-top:1.5rem;">
+          <button type="submit" class="btn btn-primary">Link Account</button>
+          <a href="{% url 'admin_panel:group_detail' group.id %}" class="btn btn-outline">Cancel</a>
+        </div>
+      </form>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

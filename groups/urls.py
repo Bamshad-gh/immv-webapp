@@ -61,8 +61,7 @@ urlpatterns = [
         name='fill_case_for_managed'
     ),
 
-    # EXPAND: add new URL patterns here as you add new views
-    # Example:
-    # path('<int:group_id>/managed/<int:managed_id>/cases/', views.managed_profile_cases, name='managed_profile_cases'),
+    # EXPAND: add new user-facing URL patterns here
+    # Case assignment and managed-profile operations → admin_panel/urls.py
 
 ]

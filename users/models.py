@@ -1,15 +1,17 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
+from django.conf import settings
 
 # users/models.py
 # ─────────────────────────────────────────────────────────────
 # What's in this file (in order):
-#   1. UserManager      — custom manager for email-based login
-#   2. User             — custom user model (email instead of username)
-#   3. PersonalInfo     — abstract base, shared personal fields (no DB table)
-#   4. Profile          — real user's personal info (inherits PersonalInfo)
-#   5. ManagedProfile   — interior person, no login required (inherits PersonalInfo)
-#   6. AdminProfile     — tracks what each staff member is allowed to do
+#   1. UserManager        — custom manager for email-based login
+#   2. User               — custom user model (email instead of username)
+#   3. PersonalInfo       — abstract base, shared personal fields (no DB table)
+#   4. Profile            — real user's personal info (inherits PersonalInfo)
+#   5. ManagedProfile     — interior person, no login required (inherits PersonalInfo)
+#   6. AdminProfile       — tracks what each staff member is allowed to do
+#   7. EligibilityAnswer  — Phase 5: stores user quiz answers for eligibility scoring
 #
 # Signal lives in users/signals.py — auto-creates Profile on registration
 # Signal is registered in users/apps.py via ready()
@@ -121,10 +123,15 @@ class Profile(PersonalInfo):
 # CUSTOMIZE: add a 'status' field if profiles go through a workflow
 
 class ManagedProfile(PersonalInfo):
-    # Who created and is responsible for this profile
+    # Who created this profile. Nullable because a managed profile can be created
+    # at the group level by an admin without being "owned" by a specific user account.
+    # When null → the profile belongs to the group collectively (any member with
+    # can_fill_cases permission can manage it).
+    # on_delete=SET_NULL: if the creator's account is deleted, the profile stays.
     created_by = models.ForeignKey(
         User,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
         related_name='managed_profiles'  # user.managed_profiles.all()
     )
 
@@ -147,7 +154,9 @@ class ManagedProfile(PersonalInfo):
     )
 
     def __str__(self):
-        return f'{self.first_name} {self.last_name} (managed by {self.created_by.email})'
+        # created_by can be null if the profile was created at group level by admin
+        manager = self.created_by.email if self.created_by else 'group'
+        return f'{self.first_name} {self.last_name} (managed by {manager})'
 
 
 # ── 6. ADMIN PROFILE — Granular Staff Permissions ────────────
@@ -182,3 +191,60 @@ class AdminProfile(models.Model):
 
     def __str__(self):
         return f'AdminProfile({self.user.email})'
+
+
+# ── 7. ELIGIBILITY ANSWER — Phase 5 ──────────────────────────
+# Stores a user's answer to a single eligibility-gate requirement.
+# Used when the requirement's profile_mapping doesn't cover the question —
+# e.g. "Did you arrive in Canada on or before Feb 28, 2025?" has no profile field.
+#
+# WHY here (not on Case):
+#   Eligibility is about the PERSON, not a specific application.
+#   The same "date of arrival" answer applies to every category that checks it —
+#   the user answers it once and it's reused in every eligibility score calculation.
+#
+# EXPAND: add an 'answered_via' field ('profile_auto', 'quiz', 'admin_set')
+#         to track how each answer was collected for audit purposes.
+
+class EligibilityAnswer(models.Model):
+    # The user this answer belongs to
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='eligibility_answers',  # user.eligibility_answers.all()
+    )
+    # The specific eligibility-gate requirement this answers.
+    # limit_choices_to: only eligibility-gate requirements need quiz answers —
+    # regular data-collection requirements are answered inside a case, not here.
+    requirement = models.ForeignKey(
+        'cases.Requirement',
+        on_delete=models.CASCADE,
+        related_name='eligibility_answers',
+        limit_choices_to={'is_eligibility': True},
+    )
+    # answer_text: used for text / boolean / select type eligibility requirements.
+    # check_eligibility() compares this as a string (lowercased).
+    answer_text = models.CharField(max_length=500, blank=True)
+    # answer_date: used for date-type eligibility requirements (on_or_before_date etc.)
+    # Stored as a proper date so comparisons are timezone-safe and unambiguous.
+    answer_date = models.DateField(null=True, blank=True)
+    # answered_at: auto-updated on every save — used to show "last updated" in the quiz UI
+    answered_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        # One answer per (user, requirement) pair — the quiz updates the existing row
+        unique_together = ['user', 'requirement']
+        ordering        = ['requirement__name']
+
+    def get_value(self):
+        """
+        Returns the correct Python type for Requirement.check_eligibility().
+        WHY: check_eligibility() handles both date objects and strings —
+        returning the right type means no extra coercion in the scoring engine.
+        """
+        if self.answer_date:
+            return self.answer_date      # datetime.date object for date comparisons
+        return self.answer_text or None  # string for text/boolean/select comparisons
+
+    def __str__(self):
+        return f'{self.user.email} → {self.requirement.name}'

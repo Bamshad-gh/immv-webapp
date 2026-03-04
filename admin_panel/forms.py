@@ -1,11 +1,17 @@
 # admin_panel/forms.py
 # ─────────────────────────────────────────────────────────────
 # What's in this file (in order):
-#   1. AdminLoginForm       — staff login form
-#   2. CreateUserForm       — admin creates a new user account
-#   3. CreateAdminForm      — superadmin creates a new admin + sets permissions
-#   4. CreateCaseForm       — admin creates a case for a specific user
-#                             Service → Category → Subcategory filtered chain
+#   1. AdminLoginForm          — staff login form
+#   2. CreateUserForm          — admin creates a new user account
+#   3. CreateAdminForm         — superadmin creates a new admin + sets permissions
+#   4. CreateCaseForm          — admin creates a case for a specific user
+#                                Service → Category → Subcategory filtered chain
+#   5. AdminGroupCreateForm    — admin creates a group + picks owner
+#   6. AdminAddMemberForm      — admin adds user to group with optional role
+#   7. AdminAssignCaseForm     — admin picks a category to create a Case
+#                                (reused for member cases + managed profile cases + bulk)
+#   8. AdminLinkManagedForm    — admin links a ManagedProfile to an existing User account
+#   9. AdminManagedProfileForm — admin creates an interior person (no account)
 # ─────────────────────────────────────────────────────────────
 
 from django import forms
@@ -364,3 +370,133 @@ class AdminAddMemberForm(forms.Form):
             role      = self.cleaned_data.get('role'),
             is_active = True,
         )
+
+
+# ── 7. ADMIN ASSIGN CASE FORM ─────────────────────────────────
+# Lets the admin pick a Category to create a new Case.
+# Used by three views:
+#   - admin_assign_case_to_member    → Case for a real group member
+#   - admin_create_case_for_managed  → Case for a managed profile
+#   - admin_assign_category_to_group → bulk: one Case per member + managed profile
+#
+# WHY lazy import inside __init__?
+#   Category is in the 'cases' app. Importing at module level causes circular
+#   import errors during Django startup. __init__ runs at request time — safe.
+#
+# EXPAND: add a 'notes' TextField for creation-time admin notes on the case.
+
+class AdminAssignCaseForm(forms.Form):
+
+    category = forms.ModelChoiceField(
+        # queryset=None placeholder — replaced in __init__ via lazy import
+        queryset=None,
+        label='Service Category',
+        empty_label='— Select a category —',
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from cases.models import Category as Cat
+        # select_related('service') avoids N+1 when the dropdown renders option labels
+        self.fields['category'].queryset = (
+            Cat.objects
+            .filter(is_active=True)
+            .select_related('service')
+            .order_by('service__name', 'name')
+        )
+
+
+# ── 8. ADMIN LINK MANAGED FORM ────────────────────────────────
+# Admin links a ManagedProfile (interior person, no account) to an
+# existing User account — used when the person later registers.
+#
+# After linking:
+#   managed_profile.linked_user → their User account
+#   user.managed_account        → the ManagedProfile (reverse OneToOne)
+#
+# Two validations:
+#   1. Email must belong to a registered User
+#   2. That User must not already be linked to a DIFFERENT managed profile
+#
+# EXPAND: add a 'confirm' BooleanField for audit trails.
+
+class AdminLinkManagedForm(forms.Form):
+
+    email = forms.EmailField(
+        label='User Email',
+        widget=forms.EmailInput(attrs={'placeholder': 'their@email.com'}),
+        help_text='Enter the email of the user account to link to this profile.',
+    )
+
+    def clean_email(self):
+        """
+        Looks up the User and stores them on self.cleaned_user so the view
+        can access the User object without a second DB query.
+        """
+        email = self.cleaned_data['email']
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise ValidationError(f'No account found with email: {email}')
+
+        # hasattr handles RelatedObjectDoesNotExist — a subclass of AttributeError.
+        # If it doesn't exist the user has no linked managed profile → safe to link.
+        if hasattr(user, 'managed_account') and user.managed_account is not None:
+            raise ValidationError(f'{email} is already linked to another managed profile.')
+
+        self.cleaned_user = user   # accessed in view as form.cleaned_user
+        return email
+
+
+# ── 9. ADMIN MANAGED PROFILE FORM ────────────────────────────
+# Admin creates an interior person (ManagedProfile) for a group.
+# The person has no account — admin manages them directly.
+# 'created_by' and 'group' are set in the view, not in this form.
+#
+# CUSTOMIZE: add or remove PersonalInfo fields to match your project.
+# EXPAND: add a 'relationship' field (e.g., "mother", "employee") if needed.
+
+from users.models import ManagedProfile
+
+class AdminManagedProfileForm(forms.ModelForm):
+    """
+    Creates a ManagedProfile (interior person, no login account).
+    The 'group' assignment is handled in TWO ways:
+      1. Default: the profile joins the group provided in the URL (group_id).
+      2. Optional override: admin fills 'new_group_name' → a brand-new group is
+         created exclusively for this person (their own "file").
+    'created_by' and 'group' are always set in the view, not here.
+
+    CUSTOMIZE: add/remove PersonalInfo fields to match your project.
+    EXPAND: add a 'relationship' field (e.g. "mother", "employee") if needed.
+    """
+
+    # Extra non-model field — if filled, creates a new group for this interior person
+    # instead of adding them to the URL's existing group.
+    # WHY non-model? ManagedProfile has no 'new_group_name' DB column — this is
+    # purely a creation-time convenience field handled in the view.
+    new_group_name = forms.CharField(
+        required  = False,
+        label     = 'Create a dedicated group for this person (optional)',
+        help_text = 'Leave blank to add this person to the current group. '
+                    'Enter a name (e.g. "Doe Family File") to create a new group just for them.',
+        widget    = forms.TextInput(attrs={'placeholder': 'e.g. Doe Family File'}),
+    )
+
+    class Meta:
+        model  = ManagedProfile
+        fields = [
+            'first_name',
+            'last_name',
+            'date_of_birth',
+            'gender',
+            'country_of_birth',
+            'city_of_birth',
+            'passport_number',
+            # CUSTOMIZE: add/remove fields here to match your PersonalInfo fields
+        ]
+        widgets = {
+            # Renders as a date picker in supporting browsers
+            'date_of_birth': forms.DateInput(attrs={'type': 'date'}),
+        }

@@ -1,13 +1,16 @@
 # groups/views.py
 # ─────────────────────────────────────────────────────────────
 # What's in this file (in order):
-#   1. get_group_access()       — reusable helper: returns (is_creator, membership)
+#   1. get_group_access()       — helper: returns (is_creator, membership)
 #   2. group_dashboard()        — list all groups the user belongs to
-#   3. group_detail()           — single group: members, roles, managed profiles, cases
+#   3. group_detail()           — single group: read-only view of members + cases
 #   4. group_create()           — create a new group + extra info
 #   5. add_member()             — add existing user to a group
 #   6. create_managed_profile() — create interior person (no account)
 #   7. fill_case_for_managed()  — fill case requirements on behalf of managed profile
+#
+# Case assignment, managed-profile linking, and bulk case creation are
+# ADMIN PANEL operations — see admin_panel/views.py for those.
 #
 # Pattern used in every view:
 #   1. Authenticate  → @login_required
@@ -91,36 +94,20 @@ def group_detail(request, group_id):
         .prefetch_related('permissions')
     )
 
-    managed_profiles = group.managed_profiles.select_related('created_by')
+    managed_profiles = group.managed_profiles.select_related('created_by', 'linked_user')
 
-    # Group-level cases only — excludes managed profile cases
-    # Managed profile cases show under each managed profile card in the template
-    from cases.models import Case
-    group_cases = Case.objects.filter(
-        group=group,
-        managed_profile=None,
-        is_active=True
-    ).select_related('user', 'category')
-
-    context = {
+    return render(request, 'groups/detail.html', {
         'group':            group,
         'membership':       membership,
         'is_creator':       is_creator,
         'all_memberships':  all_memberships,
         'managed_profiles': managed_profiles,
-        'group_cases':      group_cases,
 
         # Permission flags — template uses these to show/hide sections
-        # Creator always gets full access
-        # Everyone else depends on their GroupMembership.permissions
+        # Creator always gets full access; others depend on GroupMembership.permissions
         'can_view_members':   is_creator or (membership and membership.can_view_members()),
         'can_manage_members': is_creator or (membership and membership.can_manage_members()),
-        'can_fill_cases':     is_creator or (membership and membership.can_fill_cases()),
-
-        # EXPAND: add flags for custom permissions here
-        # 'can_export_data': is_creator or (membership and membership.can_export_data()),
-    }
-    return render(request, 'groups/detail.html', context)
+    })
 
 
 # ── 4. GROUP CREATE ───────────────────────────────────────────
@@ -217,8 +204,34 @@ def create_managed_profile(request, group_id):
         form = ManagedProfileForm(request.POST, request.FILES)
         if form.is_valid():
             managed            = form.save(commit=False)
-            managed.created_by = request.user
-            managed.group      = group
+            managed.created_by = request.user   # user who filled the form is the creator
+
+            # ── Group assignment logic ─────────────────────────────
+            # Two modes controlled by the optional new_group_name field:
+            #   1. new_group_name filled → create a brand-new group just for this person
+            #      and redirect back to the current group (the URL's group is unchanged)
+            #   2. blank → attach to the group from the URL as usual
+            new_group_name = form.cleaned_data.get('new_group_name', '').strip()
+            if new_group_name:
+                # Create a dedicated group for this interior person.
+                # Type 'other' is the correct fallback (valid Group.GROUP_TYPES choice).
+                # EXPAND: expose a type dropdown if users need family/business/etc.
+                dedicated_group = Group.objects.create(
+                    name       = new_group_name,
+                    type       = 'other',
+                    created_by = request.user,
+                )
+                # Auto-add the creator as a member of the new group
+                # so they can access it without a separate step.
+                GroupMembership.objects.create(
+                    user  = request.user,
+                    group = dedicated_group,
+                )
+                managed.group = dedicated_group
+            else:
+                # Default: attach to the group the user navigated from
+                managed.group = group
+
             managed.save()
             messages.success(request, f'Profile for {managed.full_name()} created.')
             return redirect('groups:group_detail', group_id=group_id)
@@ -260,7 +273,7 @@ def fill_case_for_managed(request, group_id, managed_id, case_id):
 
     # Case must belong to this specific managed profile
     # managed_profile=managed ensures a guessed case_id from another profile won't work
-    from cases.models import Case, CaseAnswer
+    from cases.models import Case, CaseAnswer, CaseRequirement
     from cases.forms import RequirementForm, build_initial, save_answers
 
     case = get_object_or_404(
@@ -270,9 +283,35 @@ def fill_case_for_managed(request, group_id, managed_id, case_id):
         is_active=True
     )
 
-    requirements     = case.category.requirements.all()
-    existing_answers = CaseAnswer.objects.filter(case=case)
-    initial          = build_initial(existing_answers)
+    # Use CaseRequirement (the per-case active list), NOT case.category.requirements.
+    # Requirements are now in a library and linked via CategoryRequirement + CaseRequirement.
+    # Filtering is_active=True respects any admin customizations on this specific case
+    # (e.g. admin disabled a requirement for this case only).
+    active_case_reqs = (
+        CaseRequirement.objects
+        .filter(case=case, is_active=True)
+        .select_related('requirement')
+        .order_by('id')     # preserve creation order; admin reorder updates this in future
+    )
+    requirements     = [cr.requirement for cr in active_case_reqs]
+    existing_answers = (
+        CaseAnswer.objects
+        .filter(case=case)
+        .select_related('requirement', 'answer_choice')
+    )
+    # Phase 3: pass both sources for auto-fill:
+    #   managed_profile → fills from interior person's own data (managed_profile_mapping)
+    #   user=request.user → fills gaps via profile_mapping on the managing user's profile
+    #                        (e.g. a shared address field, group name, etc.)
+    # Priority order inside build_initial():
+    #   managed_profile_mapping > user profile_mapping > managed cross-case > user cross-case
+    initial, auto_filled_ids = build_initial(
+        existing_answers,
+        case             = case,
+        user             = request.user,   # managing user fills gaps
+        managed_profile  = managed,        # interior person's own data takes priority
+        requirements     = requirements,
+    )
 
     if request.method == 'POST':
         form = RequirementForm(
@@ -282,15 +321,20 @@ def fill_case_for_managed(request, group_id, managed_id, case_id):
             initial=initial,
         )
         if form.is_valid():
-            save_answers(form, case, requirements)
+            save_answers(form, case, requirements, auto_filled_ids=auto_filled_ids)
             messages.success(request, f'Answers saved for {managed.full_name()}.')
             return redirect('groups:group_detail', group_id=group_id)
     else:
         form = RequirementForm(requirements, initial=initial)
 
+    # Convert to list of field names for template JS (same pattern as cases/views.py).
+    auto_filled_fields = [f'req_{rid}' for rid in auto_filled_ids]
+
     return render(request, 'groups/fill_case.html', {
-        'form':    form,
-        'managed': managed,
-        'case':    case,
-        'group':   group,
+        'form':               form,
+        'managed':            managed,
+        'case':               case,
+        'group':              group,
+        'requirements':       requirements,     # for auto-fill badge loop in template
+        'auto_filled_fields': auto_filled_fields,  # list of field names for JS badge rendering
     })

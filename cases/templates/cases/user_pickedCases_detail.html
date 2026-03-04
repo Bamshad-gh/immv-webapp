@@ -1,7 +1,50 @@
 {% extends "base.html" %}
 {% block title %}{{ case.category.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  /*
+   * Auto-fill styling — Phase 2.
+   * Fields pre-filled from profile or a previous case get an amber highlight
+   * to tell the user "we filled this for you — check it and change if needed."
+   * Fields remain fully editable — auto-fill is a hint, never a lock.
+   */
+  .req-field-wrapper.auto-filled input,
+  .req-field-wrapper.auto-filled select,
+  .req-field-wrapper.auto-filled textarea {
+    border-color: var(--amber);
+    background-color: #fffbf0;
+  }
+
+  /* Small badge next to the label — "Auto-filled ✓" */
+  .auto-fill-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    color: var(--amber);
+    font-style: italic;
+    font-weight: 400;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+    /* EXPAND: change text or icon here if you want a different indicator */
+  }
+
+  /* Info blocks (type=info_text) — styled as a callout, no input */
+  .info-block {
+    background: #f0f4ff;
+    border-left: 3px solid #4a7dc8;
+    padding: 0.6rem 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    font-size: 0.88rem;
+    color: var(--navy);
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="page">
+
+  <!-- ── Page header ─────────────────────────────────────────── -->
   <div class="page-header">
     <div>
       <h1 class="page-title">{{ case.category.name }}</h1>
@@ -18,34 +61,98 @@
       {{ case.status }}
     </span>
   </div>
+
+  <!-- ── Form card ────────────────────────────────────────────── -->
   <div class="card">
     <form method="POST" enctype="multipart/form-data">
       {% csrf_token %}
-  {% for field in form %}
-    <div class="form-group">
-      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-      {{ field }}
-      {% if field.help_text %}
-        <p class="text-muted text-small mt-1">{{ field.help_text }}</p>
+
+      {% for field in form %}
+        <!--
+          Each field gets a wrapper div with data-field-name="{{ field.html_name }}".
+          The JavaScript block below uses this attribute to apply auto-fill styling.
+          WHY data attribute? It lets JS find the wrapper without tight coupling
+          between field names and CSS class names.
+        -->
+        <div class="form-group req-field-wrapper" data-field-name="{{ field.html_name }}">
+          <label for="{{ field.id_for_label }}">
+            {{ field.label }}
+            <!--
+              .auto-fill-badge is hidden by default (display:none set by JS on non-auto-filled fields).
+              JS below shows it only for auto-filled fields.
+              EXPAND: change the badge text here (e.g. use an icon instead of text).
+            -->
+            <span class="auto-fill-badge" style="display:none;" title="Pre-filled from your profile or a previous application. You can change this.">
+              Auto-filled ✓
+            </span>
+          </label>
+
+          {{ field }}
+
+          {% if field.help_text %}
+            <p class="text-muted text-small mt-1">{{ field.help_text }}</p>
+          {% endif %}
+          {{ field.errors }}
+        </div>
+      {% endfor %}
+
+      {% if form.non_field_errors %}
+        <div class="message message-error" style="margin-bottom:1rem;">
+          {{ form.non_field_errors }}
+        </div>
       {% endif %}
-      {{ field.errors }}
-    </div>
-  {% endfor %}
 
-  {% if form.non_field_errors %}
-    <div class="message message-error" style="margin-bottom:1rem;">
-      {{ form.non_field_errors }}
-    </div>
-  {% endif %}
+      <div class="divider"></div>
 
-  <div class="divider"></div>
-
-  <div class="flex-between">
-    <a href="{% url 'cases:dashboard' %}" class="btn btn-outline">← Back</a>
-    <button type="submit" class="btn btn-primary">Save Answers</button>
-  </div>
-</form>
+      <div class="flex-between">
+        <a href="{% url 'cases:dashboard' %}" class="btn btn-outline">← Back</a>
+        <button type="submit" class="btn btn-primary">Save Answers</button>
+      </div>
+    </form>
   </div>
 </div>
 {% endblock %}
-<!--
+
+{% block extra_js %}
+<script>
+/*
+ * Phase 2 — Auto-fill badge rendering.
+ *
+ * The view passes auto_filled_fields: a list of HTML field names (e.g. ['req_5', 'req_12'])
+ * for fields that were pre-filled from the user's profile or a previous case.
+ *
+ * This script finds the wrapper div for each auto-filled field (via data-field-name),
+ * adds the .auto-filled class (amber border + light background), and shows the badge.
+ *
+ * Wrapped in IIFE to avoid polluting global scope.
+ * WHY JS instead of template tags? Template tags would need a custom filter to look up
+ * field names in the auto_filled_fields list. JS keeps the template simple.
+ *
+ * EXPAND: add a tooltip explaining WHERE the value came from
+ *         (profile vs previous case) — requires the view to pass more info.
+ */
+(function () {
+  /* Build a Set for O(1) lookup — faster than indexOf for large forms */
+  var autoFilledFields = new Set([
+    {% for field_name in auto_filled_fields %}
+      "{{ field_name }}"{% if not forloop.last %},{% endif %}
+    {% endfor %}
+  ]);
+
+  if (autoFilledFields.size === 0) return;   /* nothing to highlight — skip DOM walk */
+
+  /* Find all field wrappers and apply styling to auto-filled ones */
+  document.querySelectorAll('.req-field-wrapper[data-field-name]').forEach(function (wrapper) {
+    var fieldName = wrapper.getAttribute('data-field-name');
+    if (!autoFilledFields.has(fieldName)) return;
+
+    /* Add amber-border class */
+    wrapper.classList.add('auto-filled');
+
+    /* Show the badge in the label */
+    var badge = wrapper.querySelector('.auto-fill-badge');
+    if (badge) badge.style.display = 'inline-block';
+  });
+}());
+</script>
+{% endblock %}
