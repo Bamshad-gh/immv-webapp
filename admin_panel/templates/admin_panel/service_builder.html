@@ -596,6 +596,59 @@
       <span id="panel3-title">Requirements</span>
     </div>
 
+    <!-- ── Crawler Bar ────────────────────────────────────────
+         Shown once a category is selected (renderRequirements() toggles visibility).
+         Lets admin: view/set the source URL + trigger a crawl + see pending count.
+
+         HOW IT WORKS:
+           1. selectCategory() → calls renderRequirements() which calls updateCrawlerBar(catData)
+           2. updateCrawlerBar() fills in source_url and pending count from the AJAX response
+           3. "Save URL" → POST to /ajax/builder/category/<id>/source-url/
+           4. "Crawl Now" → POST to /admin-panel/categories/<id>/crawl/
+           5. Badge count shows how many suggestions are waiting in the review queue
+
+         WHY in Panel 3 (not Panel 2):
+           The crawler is about requirements + forms for a category, so it lives next
+           to the requirements panel. Panel 2 is navigation-only (category selection).
+
+         EXPAND: add a "Re-crawl" scheduled indicator showing days since last crawl.
+         EXPAND: auto-open Crawler Review when crawl creates new suggestions.
+    ─────────────────────────────────────────────────────────── -->
+    <div id="crawler-bar" style="display:none; padding:.6rem .85rem; background:#f8fafc;
+         border-bottom: 1px solid var(--border); font-size:.82rem;">
+
+      <!-- Source URL row — editable inline -->
+      <div style="display:flex; align-items:center; gap:.5rem; margin-bottom:.4rem; flex-wrap:wrap;">
+        <label style="font-weight:600; color:var(--slate); white-space:nowrap;">Source URL:</label>
+        <input type="url"
+               id="crawler-url-input"
+               placeholder="https://canada.ca/en/immigration-refugees-citizenship/..."
+               style="flex:1; min-width:200px; border:1px solid var(--border); border-radius:5px;
+                      padding:.25rem .5rem; font-size:.82rem;">
+        <button class="btn btn-sm btn-outline" style="white-space:nowrap;"
+                onclick="saveCrawlerUrl()">Save URL</button>
+      </div>
+
+      <!-- Crawl action row -->
+      <div style="display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;">
+        <button class="btn btn-sm btn-primary" id="crawl-now-btn"
+                onclick="triggerCrawl()"
+                style="white-space:nowrap;">
+          Crawl Now
+        </button>
+        <span id="crawler-status" style="color:var(--slate); font-size:.8rem; font-style:italic;"></span>
+        <!-- Last crawled timestamp — empty until a crawl has run -->
+        <span id="crawler-last-crawled" style="color:#94a3b8; font-size:.78rem; margin-left:auto;"></span>
+        <!-- Review link with pending badge — only visible when pending > 0 -->
+        <a id="crawler-review-link"
+           href="{% url 'admin_panel:crawler_review' %}"
+           style="display:none; font-size:.8rem; color:var(--amber); text-decoration:underline;">
+          <span id="crawler-pending-count"></span> pending →
+        </a>
+      </div>
+
+    </div><!-- /crawler-bar -->
+
     <!--
       Three tabs — only visible once a category is selected.
       Tab 1: Requirements linked to this category
@@ -717,6 +770,29 @@
         </button>
       </div>
 
+      <!--
+        Eligibility-only filter toggle.
+        WHY a separate toggle (not part of the section filter above):
+          "Eligibility only" is a cross-section filter — you want to see ALL eligibility
+          gates from ALL sections, not just one section. Combining it with the section
+          dropdown would require a special "All sections + eligibility only" option;
+          a dedicated toggle is cleaner.
+        The toggle state is stored in state.libEligOnly (set in JS).
+        loadLibrary() reads this flag and appends ?eligibility_only=1 to the API call
+        OR filters client-side in renderLibraryResults().
+        We filter client-side because the library data is already fetched;
+        sending an extra API call for a toggle would be slower.
+      -->
+      <div style="padding:0.4rem 0.75rem; border-bottom:1px solid var(--border);
+                  background:var(--cream); display:flex; align-items:center; gap:0.5rem;">
+        <label style="display:flex; align-items:center; gap:0.35rem;
+                       font-size:0.8rem; cursor:pointer; user-select:none;">
+          <input type="checkbox" id="lib-elig-only" style="width:auto; margin:0;"
+                 onchange="onLibEligFilterChange()">
+          &#9873; Eligibility gates only
+        </label>
+      </div>
+
       <div id="library-results">
         <div class="panel-empty" style="padding:1.5rem 1rem;">
           Select a category first, then browse the library.
@@ -777,6 +853,53 @@
           Required
         </label>
 
+        <!--
+          Phase 4: Eligibility Gate toggle for the Create New form.
+          WHY collapsible: most requirements are NOT eligibility gates — showing
+          these fields by default would clutter the form for the common case.
+          Clicking the toggle row shows/hides the gate-specific fields.
+
+          CONNECT: toggleNewEligibility() (defined in JS) shows/hides #new-elig-fields.
+          EXPAND: if type = 'boolean', auto-suggest 'Answer is Yes/No' as the operator.
+        -->
+        <div class="eligibility-toggle" onclick="toggleNewEligibility()"
+             style="margin-bottom:0.3rem;">
+          <span id="new-elig-arrow">&#9658;</span> &#9873; Mark as Eligibility Gate
+        </div>
+
+        <!-- Eligibility fields — hidden until the toggle above is clicked -->
+        <div id="new-elig-fields" class="eligibility-fields" style="display:none;">
+          <label style="font-size:0.75rem; font-weight:600; display:block; margin-bottom:0.15rem;">
+            Operator
+          </label>
+          <select id="new-req-elig-op">
+            <option value="">— choose operator —</option>
+            <option value="on_or_before_date">On or before date</option>
+            <option value="before_date">Strictly before date</option>
+            <option value="on_or_after_date">On or after date</option>
+            <option value="after_date">Strictly after date</option>
+            <option value="equals">Equals</option>
+            <option value="not_equals">Does not equal</option>
+            <option value="yes">Answer is Yes</option>
+            <option value="no">Answer is No</option>
+            <option value="contains">Contains text</option>
+          </select>
+
+          <label style="font-size:0.75rem; font-weight:600; display:block; margin-bottom:0.15rem;">
+            Threshold value
+            <span style="font-weight:400; color:var(--slate);">(e.g. 18, yes, no, 2025-02-28)</span>
+          </label>
+          <input type="text" id="new-req-elig-val"
+                 placeholder="e.g. 18 for age · yes for boolean · 2025-02-28 for date">
+
+          <label style="font-size:0.75rem; font-weight:600; display:block; margin-bottom:0.15rem;">
+            Fail message
+            <span style="font-weight:400; color:var(--slate);">(shown to user if they don't qualify)</span>
+          </label>
+          <input type="text" id="new-req-elig-msg"
+                 placeholder="e.g. You must be at least 18 years old.">
+        </div>
+
         <div class="inline-form-actions">
           <button class="btn btn-sm btn-primary" onclick="createRequirement()">
             Create &amp; Add
@@ -791,7 +914,12 @@
          Hidden by default (display:none); shown by selectForm().
          Contains its own two-tab layout: Requirements | Used In Categories.
     ── -->
-    <div id="form-detail-panel" style="display:none; display:flex; flex-direction:column; height:100%; display:none;">
+    <!--
+      WHY display:none here (not in CSS):
+        The panel must start hidden and be shown by selectForm() via JS (style.display='flex').
+        flex-direction:column + height:100% set the column layout used by the two inner tabs.
+    -->
+    <div id="form-detail-panel" style="display:none; flex-direction:column; height:100%;">
 
       <!-- Header: form name, meta counts, Edit/Delete/Close buttons -->
       <div class="form-detail-header">
@@ -812,19 +940,105 @@
           WHY two divs (url / no-url): one hides and the other shows depending on
           whether source_url is populated; avoids empty <a> links.
         -->
+        <!--
+          Source URL row — two variants:
+          form-detail-url   = shown when source_url IS set (displays the link + buttons)
+          form-detail-no-url = shown when source_url is NOT set (only shows the action buttons)
+          WHY two divs: avoids rendering an empty <a> with href="#" when no URL exists.
+        -->
         <div id="form-detail-url" style="margin-top:0.4rem; font-size:0.75rem; display:none;">
           <a id="form-detail-url-link" href="#" target="_blank" rel="noopener"
              style="color:var(--amber); word-break:break-all;">Source URL ↗</a>
           <button class="btn btn-sm btn-outline"
                   style="font-size:0.7rem; margin-left:0.5rem;"
                   onclick="openImportModal()">↓ Import from URL</button>
+          <!-- Upload PDF button — opens the inline PDF parsing panel below -->
+          <button class="btn btn-sm btn-outline"
+                  style="font-size:0.7rem; margin-left:0.3rem;"
+                  onclick="openPdfPanel()">↑ Upload PDF</button>
         </div>
         <div id="form-detail-no-url" style="margin-top:0.35rem;">
           <button class="btn btn-sm btn-outline"
                   style="font-size:0.7rem;"
                   onclick="openImportModal()">↓ Import from URL</button>
+          <!-- Upload PDF button — opens the inline PDF parsing panel below -->
+          <button class="btn btn-sm btn-outline"
+                  style="font-size:0.7rem; margin-left:0.3rem;"
+                  onclick="openPdfPanel()">↑ Upload PDF</button>
         </div>
       </div><!-- /form-detail-header -->
+
+      <!--
+        PDF Upload Panel — hidden by default; shown by openPdfPanel().
+
+        HOW IT WORKS:
+          1. Admin clicks "↑ Upload PDF"
+          2. Panel slides open; admin picks a .pdf file
+          3. "Parse Fields" uploads it to ajax_upload_form_pdf (multipart/form-data)
+          4. Server runs pdf_parser.extract_pdf_fields() → returns field list
+          5. renderPdfFields() shows each field with label, type badge, Required marker
+          6. "Add to Form" calls ajax_import_pdf_field_to_form → creates Requirement in
+             library (or reuses existing) + links to this form via FormRequirement
+          7. After each import, that row gets a green ✓ checkmark (not removed — admin
+             can continue importing other fields)
+          8. "Refresh Requirements" button (or close panel) updates the requirements list
+
+        WHY inline (not a modal):
+          Admin needs to see the requirements list while importing fields — side-by-side
+          context makes it easy to spot duplicates before clicking "Add to Form".
+
+        REQUIRES pypdf or PyMuPDF to be installed.
+        Run: pip install pypdf    (pure Python, no C dependencies)
+             pip install pymupdf  (faster, handles more PDF variants)
+      -->
+      <div id="pdf-upload-panel" style="display:none; padding:0.65rem 0.85rem;
+           border-bottom:1px solid var(--border); background:#f0f7ff; flex-shrink:0;">
+
+        <!-- Hidden file input — triggered programmatically by choosePdfFile() -->
+        <input type="file" id="pdf-file-input" accept=".pdf"
+               style="display:none;" onchange="onPdfFileChosen(this)">
+
+        <!-- Row 1: file picker + parse button + close -->
+        <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.45rem; flex-wrap:wrap;">
+          <strong style="font-size:0.78rem; color:var(--navy); white-space:nowrap;">Upload Fillable PDF:</strong>
+          <button class="btn btn-sm btn-outline" onclick="choosePdfFile()"
+                  style="white-space:nowrap;">Choose PDF</button>
+          <span id="pdf-file-name"
+                style="font-size:0.78rem; color:var(--slate); flex:1; min-width:0;
+                       overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            No file chosen
+          </span>
+          <!--
+            "Parse Fields" only shown after a file is chosen (toggled by onPdfFileChosen()).
+            WHY hidden until file chosen: avoids confusion if admin clicks it with no file.
+          -->
+          <button class="btn btn-sm btn-primary" id="pdf-parse-btn"
+                  style="display:none; white-space:nowrap;"
+                  onclick="parsePdf()">Parse Fields</button>
+          <button class="btn btn-sm btn-outline" onclick="closePdfPanel()"
+                  title="Close PDF panel" style="padding:0.25rem 0.5rem;">✕</button>
+        </div>
+
+        <!-- Status message: "Parsing…", "Found 12 fields", or error -->
+        <div id="pdf-parse-status" style="font-size:0.78rem; color:var(--slate); margin-bottom:0.3rem;"></div>
+
+        <!--
+          Extracted fields list.
+          Populated by renderPdfFields() after a successful parse.
+          Each row: label | type badge | required marker | "Add to Form" button.
+          After import the button changes to "✓ Added" (green, disabled).
+        -->
+        <div id="pdf-fields-list" style="max-height:260px; overflow-y:auto;"></div>
+
+        <!-- "Refresh Requirements" — after importing fields, refresh the main list -->
+        <div id="pdf-refresh-row" style="display:none; margin-top:0.4rem;">
+          <button class="btn btn-sm btn-outline" style="font-size:0.78rem;"
+                  onclick="reloadFormDetail(); document.getElementById('pdf-refresh-row').style.display='none';">
+            ↺ Refresh Requirements List
+          </button>
+        </div>
+
+      </div><!-- /pdf-upload-panel -->
 
       <!-- Two-tab bar inside form detail -->
       <div class="req-tabs" style="border-bottom:1px solid var(--border); flex-shrink:0;">
@@ -1063,6 +1277,78 @@ function switchTab(name) {
   if (name === 'forms')   loadFormsForCategory();
 }
 
+// ── Panel 3 single state controller ──────────────────────────
+//
+// WHY a dedicated controller instead of each function doing its own DOM work:
+//   Two mechanisms were fighting each other. selectForm() used style.display (inline)
+//   to hide .req-tab-content panels, while switchTab() used CSS classes (.active)
+//   to show them. Inline styles always beat CSS classes, so after selectForm() ran,
+//   switchTab() appeared to do nothing — the tabs were visually stuck.
+//
+//   setPanel3Mode() is the ONLY place that sets .req-tab-content visibility.
+//   Every other function (selectForm, clearFormDetail, renderRequirements,
+//   selectService, deleteService, deleteCategory) calls this instead of
+//   touching Panel 3 DOM directly.
+//
+// Modes:
+//   'empty'    — no category or form selected (initial state after selecting a service)
+//   'category' — a category is selected; shows the requirements + tab bar
+//   'form'     — a government form is selected; shows the form detail panel
+//
+// EXPAND: add 'loading' mode that shows a spinner in Panel 3 during long AJAX calls.
+//         setPanel3Mode('loading') would show a spinner and hide all real content.
+
+function setPanel3Mode(mode) {
+  var tabBar     = document.getElementById('req-tab-bar');
+  var formPanel  = document.getElementById('form-detail-panel');
+  var crawlerBar = document.getElementById('crawler-bar');
+
+  if (mode === 'category') {
+    // Show category requirements mode.
+    // CRITICAL: clear all stale inline styles on .req-tab-content FIRST.
+    // After selectForm() → mode 'form', those panels have style.display='none' (inline).
+    // Setting display='' removes the inline style, letting the CSS .active class take over.
+    // Without this step, switchTab() can set .active all it wants but the inline
+    // style.display:'none' will always win — tabs stay blank.
+    document.querySelectorAll('.req-tab-content').forEach(function(el) {
+      el.style.display = '';   // remove inline override; CSS .active now controls visibility
+    });
+    tabBar.style.display    = '';       // show the tab bar (lets CSS control it)
+    formPanel.style.display = 'none';   // hide form detail panel
+
+    // crawler-bar visibility is controlled separately:
+    //   updateCrawlerBar(category) shows it when source_url is set
+    //   hideCrawlerBar() hides it (called from selectService and resets)
+    // We do NOT touch crawlerBar here so that the caller can call updateCrawlerBar()
+    // after us if needed (see selectCategory / renderRequirements callers).
+
+  } else if (mode === 'form') {
+    // Show form detail mode.
+    // Hide all category tab content panels with inline styles
+    // (overrides whatever CSS class state they're in).
+    document.querySelectorAll('.req-tab-content').forEach(function(el) {
+      el.style.display = 'none';
+    });
+    tabBar.style.display     = 'none';   // hide category tab bar
+    crawlerBar.style.display = 'none';   // hide crawler bar (not relevant in form mode)
+    formPanel.style.display  = 'flex';   // show form detail (flex layout for inner tabs)
+
+  } else {
+    // mode === 'empty' — no category or form selected.
+    // Reset all inline styles so CSS controls visibility (all tabs start hidden via CSS).
+    document.querySelectorAll('.req-tab-content').forEach(function(el) {
+      el.style.display = '';   // remove inline override
+    });
+    tabBar.style.display     = 'none';   // hide tab bar
+    crawlerBar.style.display = 'none';   // hide crawler bar
+    formPanel.style.display  = 'none';   // hide form detail panel
+  }
+
+  // Update state so other functions can read the current mode.
+  state.mode = mode;
+}
+
+
 // ── Render: Services ─────────────────────────────────────────
 function renderServiceList(services) {
   const container = document.getElementById('service-list');
@@ -1161,197 +1447,60 @@ function renderCategoryLevel(categories, depth, parentId) {
 function renderRequirements(ownReqs, inherited, categoryName) {
   var container = document.getElementById('requirements-list');
   var title     = document.getElementById('panel3-title');
-  var tabBar    = document.getElementById('req-tab-bar');
 
   title.textContent = categoryName;
 
-  // Show tab bar once a category is selected
-  tabBar.style.display = '';
+  // Switch Panel 3 to 'category' mode.
+  // WHY call setPanel3Mode here (not in selectCategory directly):
+  //   renderRequirements is the function that actually populates the panel.
+  //   By calling setPanel3Mode here, we guarantee that inline styles left by
+  //   selectForm() (or any other mode) are cleared before we render new content.
+  //   If the panel is in the wrong visual state when we render, the tabs will
+  //   appear stuck even though the DOM content is correct.
+  setPanel3Mode('category');
+
+  // ── Split requirements into two groups for visual clarity ────────────────
+  //
+  // WHY split: eligibility gates are structurally different from regular requirements.
+  //   - Regular requirements collect data (name, date, document, etc.)
+  //   - Eligibility gates GATE access — the user must meet a condition to proceed.
+  // Showing them together hides this distinction. Separate sections make it clear
+  // which requirements are gates and which are data collection.
+  var eligReqs = ownReqs.filter(function(r) { return r.is_eligibility; });
+  var normReqs = ownReqs.filter(function(r) { return !r.is_eligibility; });
 
   var html = '';
 
-  if (ownReqs.length) {
-    ownReqs.forEach(function(req) {
-      var typeBadge = '<span class="type-badge">' + escHtml(req.type) + '</span>';
-
-      // 'required' badge — green
-      var reqBadge = req.is_required
-        ? '<span class="type-badge" style="border-color:#b7dfca;color:#2e7d52;">required</span>'
-        : '';
-
-      // Section badge — shows which library section this belongs to
-      var sectionBadge = req.section_name
-        ? '<span class="type-badge" style="color:var(--amber);border-color:var(--amber);">'
-          + escHtml(req.section_name) + '</span>'
-        : '';
-
-      // Phase 4: eligibility gate badge — ⚑ shown when is_eligibility is true
-      // WHY a distinct badge: eligibility requirements are special — they control
-      // whether the user is even eligible to proceed with the application.
-      var eligBadge = req.is_eligibility
-        ? '<span class="elig-badge" title="Eligibility gate — answer is checked against a condition">&#9873; eligibility</span>'
-        : '';
-
-      // profile_mapping hint
-      var mappingHint = req.profile_mapping
-        ? '<div style="font-size:0.7rem;color:var(--slate);margin-top:0.2rem;">'
-          + '↪ auto-fill: ' + escHtml(req.profile_mapping) + '</div>'
-        : '';
-
-      // "Manage Choices" button — only for select-type
-      var choicesBtn = req.type === 'select'
-        ? '<button class="btn btn-sm btn-outline" style="font-size:0.7rem;"'
-          + ' onclick="toggleChoices(' + req.id + ', ' + req.cr_id + ')">Choices</button>'
-        : '';
-
-      html += '<div class="req-row" id="req-row-' + req.id + '">'
-        // ── Header row ──
-        + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-        + '<div>'
-        + '<span style="font-weight:500;">' + escHtml(req.name) + '</span>'
-        + typeBadge + reqBadge + sectionBadge + eligBadge
-        + '</div>'
-        + '<div style="display:flex;gap:0.35rem;">'
-        + choicesBtn
-        + '<button class="btn btn-sm btn-outline" onclick="toggleReqEdit(' + req.id + ')">Edit</button>'
-        // "Remove from category" — removes the CategoryRequirement bridge row.
-        // The library item is preserved and can be added to other categories.
-        + '<button class="btn btn-sm btn-danger"'
-        + ' onclick="removeFromCategory(' + req.cr_id + ')"'
-        + ' title="Remove from this category (keeps in library)">Remove</button>'
-        + '</div>'
-        + '</div>'
-        // ── Description ──
-        + (req.description
-            ? '<div style="font-size:0.8rem;color:var(--slate);margin-top:0.25rem;">'
-              + escHtml(req.description) + '</div>'
-            : '')
-        + mappingHint
-
-        // ── Edit form (hidden by default) ──
-        + '<div class="req-edit-form" id="req-edit-' + req.id + '">'
-        + '<div class="inline-error" id="err-req-edit-' + req.id + '"></div>'
-        + '<input type="text" id="edit-req-name-' + req.id + '" value="' + escHtml(req.name) + '" placeholder="Name">'
-        + '<select id="edit-req-type-' + req.id + '">'
-        + ['text','question','number','date','document','select','boolean','info_text'].map(function(t) {
-            return '<option value="' + t + '" ' + (req.type === t ? 'selected' : '') + '>' + t + '</option>';
-          }).join('')
-        + '</select>'
-        + '<textarea id="edit-req-desc-' + req.id + '" rows="2">' + escHtml(req.description) + '</textarea>'
-        + '<input type="text" id="edit-req-mapping-' + req.id + '"'
-        + ' value="' + escHtml(req.profile_mapping) + '"'
-        + ' placeholder="User profile auto-fill (e.g. profile.first_name)" title="Phase 2: dot-path to the managing user\'s profile. Fills shared questions like address.">'
-        // Phase 3: managed_profile_mapping — auto-fill from the interior person's own data.
-        // Available ManagedProfile fields (from PersonalInfo abstract base):
-        //   first_name, last_name, date_of_birth, gender,
-        //   country_of_birth, city_of_birth, passport_number
-        + '<input type="text" id="edit-req-mp-mapping-' + req.id + '"'
-        + ' value="' + escHtml(req.managed_profile_mapping || '') + '"'
-        + ' placeholder="Interior person auto-fill (e.g. first_name, date_of_birth)" title="Phase 3: dot-path into ManagedProfile. Pre-fills from the interior person\'s own record.">'
-        // Phase 2: form_field_id — links this requirement to a government form field for Phase 4 scrapers.
-        // Format: '<form_code>__<field_id>'  e.g. 'IMM5710__gender'
-        + '<input type="text" id="edit-req-form-field-id-' + req.id + '"'
-        + ' value="' + escHtml(req.form_field_id || '') + '"'
-        + ' placeholder="Gov. form field ID (e.g. IMM5710__gender)" title="Phase 4: identifier used by scrapers to auto-populate government PDF forms. Leave blank if not applicable.">'
-        // Section picker — lets admin move this requirement to a different library section.
-        // Populated from state.sections (cached when the page loads loadSections()).
-        // WHY a <select> here instead of a text input? The section must be an existing
-        // DB row — a picker prevents typos and orphaned references.
-        + '<label style="font-size:0.78rem;font-weight:600;display:block;margin-top:0.5rem;">Library Section</label>'
-        + '<select id="edit-req-section-' + req.id + '"'
-        + ' title="Move this requirement to a different library section. Affects which section filter shows it in the library browser.">'
-        + '<option value="">— Uncategorized —</option>'
-        + state.sections.map(function(s) {
-            // Pre-select the requirement's current section so admin sees where it is now
-            return '<option value="' + s.id + '"'
-              + (req.section_id === s.id ? ' selected' : '')
-              + '>' + escHtml(s.name) + '</option>';
-          }).join('')
-        + '</select>'
-        + '<div style="font-size:0.72rem;color:var(--slate);margin:0.2rem 0 0.5rem;">'
-        + 'Changes which section this requirement appears under in the library browser.</div>'
-        + '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;margin-bottom:0.4rem;cursor:pointer;">'
-        + '<input type="checkbox" id="edit-req-required-' + req.id + '" '
-        + (req.is_required ? 'checked' : '') + ' style="width:auto;margin:0;"> Required</label>'
-        + '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;margin-bottom:0.5rem;cursor:pointer;">'
-        + '<input type="checkbox" id="edit-req-active-' + req.id + '" '
-        + (req.is_active ? 'checked' : '') + ' style="width:auto;margin:0;"> Active</label>'
-
-        // ── Phase 4: Eligibility Check ─────────────────────────────────────────
-        // Collapsible section. The arrow toggle calls toggleEligibility(reqId).
-        // WHY collapsible: eligibility fields are rarely needed — keeping them
-        // hidden by default prevents visual noise on requirements that are just
-        // normal data-collection fields.
-        + '<div class="eligibility-toggle" onclick="toggleEligibility(' + req.id + ')">'
-        + '<span id="elig-arrow-' + req.id + '">' + (req.is_eligibility ? '▾' : '▸') + '</span>'
-        + ' &#9873; Eligibility Check'
-        + '</div>'
-        + '<div class="eligibility-fields' + (req.is_eligibility ? ' open' : '') + '" id="elig-fields-' + req.id + '">'
-
-        // is_eligibility checkbox — checking it expands the other fields
-        + '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;margin-bottom:0.6rem;cursor:pointer;">'
-        + '<input type="checkbox" id="edit-req-elig-' + req.id + '" style="width:auto;margin:0;" '
-        + (req.is_eligibility ? 'checked' : '')
-        + ' onchange="toggleEligibility(' + req.id + ')">'
-        + ' Mark as eligibility gate (answer is checked against a condition)</label>'
-
-        // Operator — how to compare the answer against the threshold value
-        + '<label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.15rem;">Operator</label>'
-        + '<select id="edit-req-elig-op-' + req.id + '">'
-        + [
-            ['on_or_before_date', 'On or before date'],
-            ['before_date',       'Strictly before date'],
-            ['on_or_after_date',  'On or after date'],
-            ['after_date',        'Strictly after date'],
-            ['equals',            'Equals'],
-            ['not_equals',        'Does not equal'],
-            ['yes',               'Answer is Yes'],
-            ['no',                'Answer is No'],
-            ['contains',          'Contains text'],
-          ].map(function(op) {
-            return '<option value="' + op[0] + '"'
-              + (req.eligibility_operator === op[0] ? ' selected' : '')
-              + '>' + op[1] + '</option>';
-          }).join('')
-        + '</select>'
-
-        // Threshold value — the right-hand side of the comparison
-        + '<label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.15rem;">Threshold value</label>'
-        + '<input type="text" id="edit-req-elig-val-' + req.id + '"'
-        + ' value="' + escHtml(req.eligibility_value || '') + '"'
-        + ' placeholder="e.g. 2025-02-28 for date · yes for boolean · canada for contains">'
-
-        // Fail message — shown to the user if they do not meet the condition
-        + '<label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.15rem;">Fail message (shown to user if ineligible)</label>'
-        + '<input type="text" id="edit-req-elig-msg-' + req.id + '"'
-        + ' value="' + escHtml(req.eligibility_fail_message || '') + '"'
-        + ' placeholder="e.g. You did not arrive in Canada before the cut-off date.">'
-        + '</div>'
-        // ── /Phase 4: Eligibility Check ───────────────────────────────────────
-
-        + '<div class="inline-form-actions">'
-        + '<button class="btn btn-sm btn-primary" onclick="saveRequirement(' + req.id + ')">Save</button>'
-        + '<button class="btn btn-sm btn-outline" onclick="toggleReqEdit(' + req.id + ')">Cancel</button>'
-        + '</div>'
-        + '</div>'
-
-        // ── Choices panel (hidden; shown for select-type via toggleChoices()) ──
-        + '<div class="choices-panel" id="choices-panel-' + req.id + '">'
-        + '<div style="font-weight:600;margin-bottom:0.5rem;">Dropdown Options</div>'
-        + '<div id="choices-list-' + req.id + '"><em>Loading...</em></div>'
-        + '<div style="margin-top:0.75rem;border-top:1px solid var(--border);padding-top:0.5rem;">'
-        + '<div class="inline-error" id="err-choice-' + req.id + '"></div>'
-        + '<input type="text" id="new-choice-label-' + req.id + '" placeholder="Label (shown to user)"'
-        + ' style="padding:0.35rem 0.5rem;font-size:0.8rem;border:1px solid var(--border);width:100%;margin-bottom:0.3rem;">'
-        + '<input type="text" id="new-choice-value-' + req.id + '" placeholder="Value (stored — leave blank = same as label)"'
-        + ' style="padding:0.35rem 0.5rem;font-size:0.8rem;border:1px solid var(--border);width:100%;margin-bottom:0.4rem;">'
-        + '<button class="btn btn-sm btn-primary" onclick="createChoice(' + req.id + ')">+ Add Option</button>'
-        + '</div>'
-        + '</div>'
-
-        + '</div>';  // /req-row
+  // ── Section: Eligibility Gates ────────────────────────────────────────────
+  if (eligReqs.length) {
+    // Amber-tinted header — visually distinct from the regular requirements header below.
+    html += '<div style="padding:0.35rem 0.75rem 0.2rem; background:rgba(200,130,10,0.08);'
+      + 'border-bottom:1px solid rgba(200,130,10,0.25); border-top:2px solid rgba(200,130,10,0.3);">'
+      + '<span style="font-size:0.7rem; font-weight:700; text-transform:uppercase;'
+      + 'letter-spacing:0.06em; color:var(--amber);">&#9873; Eligibility Gates</span>'
+      + '</div>';
+    eligReqs.forEach(function(req) {
+      html += _renderReqRow(req);
     });
-  } else {
+  }
+
+  // ── Section: Requirements ─────────────────────────────────────────────────
+  if (normReqs.length) {
+    // Only show the "Requirements" header when there are also eligibility gates above,
+    // to avoid redundant label when there's just one group.
+    if (eligReqs.length) {
+      html += '<div style="padding:0.35rem 0.75rem 0.2rem; background:var(--cream);'
+        + 'border-bottom:1px solid var(--border); border-top:2px solid var(--border);">'
+        + '<span style="font-size:0.7rem; font-weight:700; text-transform:uppercase;'
+        + 'letter-spacing:0.06em; color:var(--slate);">Requirements</span>'
+        + '</div>';
+    }
+    normReqs.forEach(function(req) {
+      html += _renderReqRow(req);
+    });
+  }
+
+  if (!ownReqs.length) {
     html += '<div class="panel-empty" style="padding:1.5rem 1rem;">'
       + 'No requirements yet.<br>'
       + '<span style="color:var(--slate);font-size:0.8rem;">'
@@ -1378,38 +1527,274 @@ function renderRequirements(ownReqs, inherited, categoryName) {
   container.innerHTML = html;
 }
 
+// ── Render: Single requirement row ───────────────────────────
+//
+// WHY a separate helper (_renderReqRow):
+//   renderRequirements() now loops twice (once for eligReqs, once for normReqs).
+//   Extracting the row rendering into a helper avoids code duplication and makes
+//   it easy to change the row format in one place.
+//   The function starts with _ to signal it's a private/internal helper.
+//
+// EXPAND: add a drag-handle div before the row content to enable drag-and-drop
+//         reordering (hook up to the ajax_reorder_category_req endpoint).
+function _renderReqRow(req) {
+  var typeBadge = '<span class="type-badge">' + escHtml(req.type) + '</span>';
+
+  // 'required' badge — green
+  var reqBadge = req.is_required
+    ? '<span class="type-badge" style="border-color:#b7dfca;color:#2e7d52;">required</span>'
+    : '';
+
+  // Section badge — shows which library section this belongs to
+  var sectionBadge = req.section_name
+    ? '<span class="type-badge" style="color:var(--amber);border-color:var(--amber);">'
+      + escHtml(req.section_name) + '</span>'
+    : '';
+
+  // Eligibility inline summary badge — only on rows in the eligibility section.
+  // Shows the operator + value inline so admin can quickly scan gate conditions
+  // without opening the edit panel. e.g. "≥ 18" or "= yes"
+  // WHY not show this in the eligBadge (which shows ⚑ eligibility):
+  //   eligBadge is shown in both the eligibility section AND in the edit panel title.
+  //   The inline summary is only useful as a quick-scan element in the list view.
+  var eligSummary = '';
+  if (req.is_eligibility && req.eligibility_operator) {
+    var opLabel = {
+      'on_or_before_date': '≤ date', 'before_date': '< date',
+      'on_or_after_date': '≥ date',  'after_date':  '> date',
+      'equals': '=', 'not_equals': '≠', 'yes': '= yes', 'no': '= no',
+      'contains': 'contains',
+      // legacy operator names that may exist in older data
+      'gte': '≥', 'lte': '≤', 'eq': '=', 'neq': '≠',
+    }[req.eligibility_operator] || req.eligibility_operator;
+    var valPart = req.eligibility_value ? (' ' + escHtml(req.eligibility_value)) : '';
+    eligSummary = '<span class="type-badge" style="background:rgba(200,130,10,0.1);'
+      + 'border-color:rgba(200,130,10,0.4);color:var(--amber);font-weight:700;">'
+      + escHtml(opLabel) + valPart + '</span>';
+  }
+
+  // profile_mapping hint
+  var mappingHint = req.profile_mapping
+    ? '<div style="font-size:0.7rem;color:var(--slate);margin-top:0.2rem;">'
+      + '↪ auto-fill: ' + escHtml(req.profile_mapping) + '</div>'
+    : '';
+
+  // "Manage Choices" button — only for select-type
+  var choicesBtn = req.type === 'select'
+    ? '<button class="btn btn-sm btn-outline" style="font-size:0.7rem;"'
+      + ' onclick="toggleChoices(' + req.id + ', ' + req.cr_id + ')">Choices</button>'
+    : '';
+
+  return '<div class="req-row" id="req-row-' + req.id + '">'
+    // ── Header row ──
+    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+    + '<div>'
+    + '<span style="font-weight:500;">' + escHtml(req.name) + '</span>'
+    + typeBadge + reqBadge + sectionBadge + eligSummary
+    + '</div>'
+    + '<div style="display:flex;gap:0.35rem;">'
+    + choicesBtn
+    + '<button class="btn btn-sm btn-outline" onclick="toggleReqEdit(' + req.id + ')">Edit</button>'
+    // "Remove from category" — removes the CategoryRequirement bridge row.
+    // The library item is preserved and can be added to other categories.
+    + '<button class="btn btn-sm btn-danger"'
+    + ' onclick="removeFromCategory(' + req.cr_id + ')"'
+    + ' title="Remove from this category (keeps in library)">Remove</button>'
+    + '</div>'
+    + '</div>'
+    // ── Description ──
+    + (req.description
+        ? '<div style="font-size:0.8rem;color:var(--slate);margin-top:0.25rem;">'
+          + escHtml(req.description) + '</div>'
+        : '')
+    + mappingHint
+
+    // ── Edit form (hidden by default) ──
+    + '<div class="req-edit-form" id="req-edit-' + req.id + '">'
+    + '<div class="inline-error" id="err-req-edit-' + req.id + '"></div>'
+    + '<input type="text" id="edit-req-name-' + req.id + '" value="' + escHtml(req.name) + '" placeholder="Name">'
+    + '<select id="edit-req-type-' + req.id + '">'
+    + ['text','question','number','date','document','select','boolean','info_text'].map(function(t) {
+        return '<option value="' + t + '" ' + (req.type === t ? 'selected' : '') + '>' + t + '</option>';
+      }).join('')
+    + '</select>'
+    + '<textarea id="edit-req-desc-' + req.id + '" rows="2">' + escHtml(req.description) + '</textarea>'
+    + '<input type="text" id="edit-req-mapping-' + req.id + '"'
+    + ' value="' + escHtml(req.profile_mapping) + '"'
+    + ' placeholder="User profile auto-fill (e.g. profile.first_name)" title="Phase 2: dot-path to the managing user\'s profile. Fills shared questions like address.">'
+    // Phase 3: managed_profile_mapping — auto-fill from the interior person's own data.
+    // Available ManagedProfile fields (from PersonalInfo abstract base):
+    //   first_name, last_name, date_of_birth, gender,
+    //   country_of_birth, city_of_birth, passport_number
+    + '<input type="text" id="edit-req-mp-mapping-' + req.id + '"'
+    + ' value="' + escHtml(req.managed_profile_mapping || '') + '"'
+    + ' placeholder="Interior person auto-fill (e.g. first_name, date_of_birth)" title="Phase 3: dot-path into ManagedProfile. Pre-fills from the interior person\'s own record.">'
+    // Phase 2: form_field_id — links this requirement to a government form field for Phase 4 scrapers.
+    // Format: '<form_code>__<field_id>'  e.g. 'IMM5710__gender'
+    + '<input type="text" id="edit-req-form-field-id-' + req.id + '"'
+    + ' value="' + escHtml(req.form_field_id || '') + '"'
+    + ' placeholder="Gov. form field ID (e.g. IMM5710__gender)" title="Phase 4: identifier used by scrapers to auto-populate government PDF forms. Leave blank if not applicable.">'
+    // Section picker — lets admin move this requirement to a different library section.
+    // Populated from state.sections (cached when the page loads loadSections()).
+    // WHY a <select> here instead of a text input? The section must be an existing
+    // DB row — a picker prevents typos and orphaned references.
+    + '<label style="font-size:0.78rem;font-weight:600;display:block;margin-top:0.5rem;">Library Section</label>'
+    + '<select id="edit-req-section-' + req.id + '"'
+    + ' title="Move this requirement to a different library section. Affects which section filter shows it in the library browser.">'
+    + '<option value="">— Uncategorized —</option>'
+    + state.sections.map(function(s) {
+        // Pre-select the requirement's current section so admin sees where it is now
+        return '<option value="' + s.id + '"'
+          + (req.section_id === s.id ? ' selected' : '')
+          + '>' + escHtml(s.name) + '</option>';
+      }).join('')
+    + '</select>'
+    + '<div style="font-size:0.72rem;color:var(--slate);margin:0.2rem 0 0.5rem;">'
+    + 'Changes which section this requirement appears under in the library browser.</div>'
+    + '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;margin-bottom:0.4rem;cursor:pointer;">'
+    + '<input type="checkbox" id="edit-req-required-' + req.id + '" '
+    + (req.is_required ? 'checked' : '') + ' style="width:auto;margin:0;"> Required</label>'
+    + '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;margin-bottom:0.5rem;cursor:pointer;">'
+    + '<input type="checkbox" id="edit-req-active-' + req.id + '" '
+    + (req.is_active ? 'checked' : '') + ' style="width:auto;margin:0;"> Active</label>'
+
+    // ── Phase 4: Eligibility Check ─────────────────────────────────────────
+    // Collapsible section. The arrow toggle calls toggleEligibility(reqId).
+    // WHY collapsible: eligibility fields are rarely needed — keeping them
+    // hidden by default prevents visual noise on requirements that are just
+    // normal data-collection fields.
+    + '<div class="eligibility-toggle" onclick="toggleEligibility(' + req.id + ')">'
+    + '<span id="elig-arrow-' + req.id + '">' + (req.is_eligibility ? '▾' : '▸') + '</span>'
+    + ' &#9873; Eligibility Gate'
+    + '</div>'
+    + '<div class="eligibility-fields' + (req.is_eligibility ? ' open' : '') + '" id="elig-fields-' + req.id + '">'
+
+    // is_eligibility checkbox — checking it expands the other fields
+    + '<label style="display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;margin-bottom:0.6rem;cursor:pointer;">'
+    + '<input type="checkbox" id="edit-req-elig-' + req.id + '" style="width:auto;margin:0;" '
+    + (req.is_eligibility ? 'checked' : '')
+    + ' onchange="toggleEligibility(' + req.id + ')">'
+    + ' Mark as eligibility gate (answer is checked against a condition)</label>'
+
+    // Operator — how to compare the answer against the threshold value
+    + '<label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.15rem;">Operator</label>'
+    + '<select id="edit-req-elig-op-' + req.id + '">'
+    + [
+        ['on_or_before_date', 'On or before date'],
+        ['before_date',       'Strictly before date'],
+        ['on_or_after_date',  'On or after date'],
+        ['after_date',        'Strictly after date'],
+        ['equals',            'Equals'],
+        ['not_equals',        'Does not equal'],
+        ['yes',               'Answer is Yes'],
+        ['no',                'Answer is No'],
+        ['contains',          'Contains text'],
+      ].map(function(op) {
+        return '<option value="' + op[0] + '"'
+          + (req.eligibility_operator === op[0] ? ' selected' : '')
+          + '>' + op[1] + '</option>';
+      }).join('')
+    + '</select>'
+
+    // Threshold value — the right-hand side of the comparison
+    + '<label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.15rem;">Threshold value</label>'
+    + '<input type="text" id="edit-req-elig-val-' + req.id + '"'
+    + ' value="' + escHtml(req.eligibility_value || '') + '"'
+    + ' placeholder="e.g. 2025-02-28 for date · yes for boolean · canada for contains">'
+
+    // Fail message — shown to the user if they do not meet the condition
+    + '<label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.15rem;">Fail message (shown to user if ineligible)</label>'
+    + '<input type="text" id="edit-req-elig-msg-' + req.id + '"'
+    + ' value="' + escHtml(req.eligibility_fail_message || '') + '"'
+    + ' placeholder="e.g. You did not arrive in Canada before the cut-off date.">'
+    + '</div>'
+    // ── /Phase 4: Eligibility Check ───────────────────────────────────────
+
+    + '<div class="inline-form-actions">'
+    + '<button class="btn btn-sm btn-primary" onclick="saveRequirement(' + req.id + ')">Save</button>'
+    + '<button class="btn btn-sm btn-outline" onclick="toggleReqEdit(' + req.id + ')">Cancel</button>'
+    + '</div>'
+    + '</div>'
+
+    // ── Choices panel (hidden; shown for select-type via toggleChoices()) ──
+    + '<div class="choices-panel" id="choices-panel-' + req.id + '">'
+    + '<div style="font-weight:600;margin-bottom:0.5rem;">Dropdown Options</div>'
+    + '<div id="choices-list-' + req.id + '"><em>Loading...</em></div>'
+    + '<div style="margin-top:0.75rem;border-top:1px solid var(--border);padding-top:0.5rem;">'
+    + '<div class="inline-error" id="err-choice-' + req.id + '"></div>'
+    + '<input type="text" id="new-choice-label-' + req.id + '" placeholder="Label (shown to user)"'
+    + ' style="padding:0.35rem 0.5rem;font-size:0.8rem;border:1px solid var(--border);width:100%;margin-bottom:0.3rem;">'
+    + '<input type="text" id="new-choice-value-' + req.id + '" placeholder="Value (stored — leave blank = same as label)"'
+    + ' style="padding:0.35rem 0.5rem;font-size:0.8rem;border:1px solid var(--border);width:100%;margin-bottom:0.4rem;">'
+    + '<button class="btn btn-sm btn-primary" onclick="createChoice(' + req.id + ')">+ Add Option</button>'
+    + '</div>'
+    + '</div>'
+
+    + '</div>';  // /req-row
+}
+
 // ── Render: Library results (Tab 2) ──────────────────────────
+//
+// requirements      — list of {id, name, type, section_name, profile_mapping, is_eligibility}
+// alreadyLinkedIds  — Set<number> of requirement IDs already linked to the current category
+//
+// WHY client-side eligibility filter (not a separate API call):
+//   The full library is already fetched. Filtering in JS avoids an extra HTTP round-trip
+//   and is instant. The toggle just re-runs renderLibraryResults() with the same data.
 function renderLibraryResults(requirements, alreadyLinkedIds) {
-  /*
-   * alreadyLinkedIds — Set of requirement IDs already in this category.
-   * Already-linked items show a "✓ Added" badge instead of an Add button.
-   */
   var container = document.getElementById('library-results');
 
-  if (!requirements.length) {
-    container.innerHTML = '<div class="panel-empty">No requirements found. Try a different filter.</div>';
+  // Apply eligibility-only filter if the toggle checkbox is checked
+  var eligOnly   = document.getElementById('lib-elig-only').checked;
+  var filtered   = eligOnly
+    ? requirements.filter(function(r) { return r.is_eligibility; })
+    : requirements;
+
+  if (!filtered.length) {
+    container.innerHTML = eligOnly
+      ? '<div class="panel-empty">No eligibility gates in library. Create one in the "Create New" tab and check ⚑ Eligibility Gate.</div>'
+      : '<div class="panel-empty">No requirements found. Try a different filter.</div>';
     return;
   }
 
-  container.innerHTML = requirements.map(function(req) {
+  container.innerHTML = filtered.map(function(req) {
     var alreadyAdded = alreadyLinkedIds && alreadyLinkedIds.has(req.id);
     var actionBtn    = alreadyAdded
-      ? '<span style="font-size:0.75rem;color:#2e7d52;">✓ Added</span>'
+      ? '<span style="font-size:0.75rem;color:#2e7d52;">&#10003; Added</span>'
       : '<button class="btn btn-sm btn-outline" onclick="addFromLibrary(' + req.id + ')">'
         + 'Add</button>';
 
+    // Show ⚑ badge for eligibility gates so they're easy to spot in the list
+    var eligBadge = req.is_eligibility
+      ? '<span class="elig-badge" style="font-size:0.68rem;">&#9873; gate</span>'
+      : '';
+
     return '<div class="lib-item" id="lib-item-' + req.id + '">'
       + '<div class="lib-item-info">'
-      + '<div class="lib-item-name">' + escHtml(req.name) + '</div>'
+      + '<div class="lib-item-name">' + escHtml(req.name) + eligBadge + '</div>'
       + '<div class="lib-item-meta">'
       + '<span class="type-badge" style="margin-left:0;">' + escHtml(req.type) + '</span>'
       + ' · ' + escHtml(req.section_name)
-      + (req.profile_mapping ? ' · ↪ ' + escHtml(req.profile_mapping) : '')
+      + (req.profile_mapping ? ' · &#8618; ' + escHtml(req.profile_mapping) : '')
       + '</div>'
       + '</div>'
       + actionBtn
       + '</div>';
   }).join('');
+}
+
+// Called when the "⚑ Eligibility gates only" checkbox changes.
+// Just re-renders the currently loaded library results with the new filter.
+// WHY not call loadLibrary(): the data is already in memory — re-rendering is instant.
+// If the library hasn't been loaded yet (first time switching to this tab), this is a no-op.
+function onLibEligFilterChange() {
+  // _lastLibraryData is set by loadLibrary() each time it fetches — used here to re-render.
+  if (window._lastLibraryData) {
+    renderLibraryResults(
+      window._lastLibraryData.requirements,
+      window._lastLibraryData.alreadyLinkedIds
+    );
+  }
 }
 
 // ── Actions: Service ──────────────────────────────────────────
@@ -1431,7 +1816,11 @@ async function selectService(id, name) {
   document.getElementById('requirements-list').innerHTML =
     '<div class="panel-empty">Select a category to view its requirements.</div>';
   document.getElementById('panel3-title').textContent = 'Requirements';
-  document.getElementById('req-tab-bar').style.display = 'none';
+  // WHY setPanel3Mode instead of directly hiding req-tab-bar:
+  //   setPanel3Mode('empty') also clears any stale inline styles on .req-tab-content
+  //   left over from a previous selectForm() call. Without this, switching services
+  //   while a form is open would leave the category tabs permanently invisible.
+  setPanel3Mode('empty');
   // Switch back to Tab 1 for the next category selection
   switchTab('this');
 
@@ -1467,6 +1856,8 @@ async function selectCategory(id, name, depth, parentId) {
   // Load requirements for right panel
   const detail = await apiGet('/admin-panel/ajax/builder/category/' + id + '/');
   renderRequirements(detail.own_requirements, detail.inherited, name);
+  // Update the crawler bar with source_url, last_crawled_at, pending count from the detail
+  updateCrawlerBar(detail.category);
 }
 
 async function loadServices() {
@@ -1617,6 +2008,11 @@ async function loadLibrary() {
       }
     }
 
+    // Cache the data for onLibEligFilterChange() so it can re-render without another API call.
+    // WHY window._lastLibraryData: a simple module-level variable; avoids adding to state{}
+    // (state{} is for builder selection state; this is transient render data).
+    window._lastLibraryData = { requirements: data.requirements, alreadyLinkedIds: alreadyLinked };
+
     renderLibraryResults(data.requirements, alreadyLinked);
   } catch (e) {
     // Surface the error visibly — admin should open DevTools → Console for full details
@@ -1709,6 +2105,23 @@ function onNewTypeChange() {
   // EXPAND: show/hide a "you can add choices after creating" hint if type=select
 }
 
+// Toggle the eligibility gate fields in the Create New tab.
+// Called by clicking the "⚑ Mark as Eligibility Gate" row.
+// WHY separate from toggleEligibility(reqId): the create form doesn't have a reqId yet.
+//   toggleEligibility is for existing rows in the requirements list.
+//   toggleNewEligibility is for the create form — simpler open/close with a hidden div.
+function toggleNewEligibility() {
+  var fields = document.getElementById('new-elig-fields');
+  var arrow  = document.getElementById('new-elig-arrow');
+  // Toggle between hidden (display:none) and visible (display:block).
+  // WHY check style.display (not a CSS class): the initial state is set via
+  // inline style="display:none" in HTML — consistent to check the same way.
+  var isOpen = fields.style.display !== 'none';
+  fields.style.display = isOpen ? 'none' : 'block';
+  // ▶ (right arrow) when closed, ▼ (down arrow) when open
+  arrow.innerHTML = isOpen ? '&#9658;' : '&#9660;';
+}
+
 async function createRequirement() {
   clearError('err-req-name');
 
@@ -1724,14 +2137,30 @@ async function createRequirement() {
   const mapping     = document.getElementById('new-req-mapping').value.trim();
   const is_required = document.getElementById('new-req-required').checked;
 
+  // Phase 4: read eligibility gate fields from the collapsible section.
+  // is_eligibility is true only when the gate section is open (visible).
+  // WHY check style.display: the section is controlled by toggleNewEligibility()
+  // which sets display:none/block. If the section is hidden, the user hasn't
+  // opted in — we treat is_eligibility as false regardless of the field values.
+  var eligOpen             = document.getElementById('new-elig-fields').style.display !== 'none';
+  var is_eligibility       = eligOpen;
+  var eligibility_operator = eligOpen ? (document.getElementById('new-req-elig-op').value  || '') : '';
+  var eligibility_value    = eligOpen ? (document.getElementById('new-req-elig-val').value.trim() || '') : '';
+  var eligibility_fail_msg = eligOpen ? (document.getElementById('new-req-elig-msg').value.trim() || '') : '';
+
   const res = await apiPost('/admin-panel/ajax/builder/library/create/', {
-    name:            name,
-    type:            type,
-    description:     desc,
-    is_required:     is_required,
-    section_id:      sectionId,
-    category_id:     state.categoryId,   // also link to current category
-    profile_mapping: mapping,
+    name:                    name,
+    type:                    type,
+    description:             desc,
+    is_required:             is_required,
+    section_id:              sectionId,
+    category_id:             state.categoryId,   // also link to current category
+    profile_mapping:         mapping,
+    // Phase 4: eligibility gate fields — empty if gate section is closed
+    is_eligibility:          is_eligibility,
+    eligibility_operator:    eligibility_operator,
+    eligibility_value:       eligibility_value,
+    eligibility_fail_message: eligibility_fail_msg,
   });
 
   if (!res.ok) {
@@ -1742,12 +2171,18 @@ async function createRequirement() {
     return;
   }
 
-  // Reset form
+  // Reset form — including eligibility gate fields
   document.getElementById('new-req-name').value    = '';
   document.getElementById('new-req-type').value    = '';
   document.getElementById('new-req-desc').value    = '';
   document.getElementById('new-req-mapping').value = '';
   document.getElementById('new-req-required').checked = true;
+  // Reset eligibility gate section to closed state
+  document.getElementById('new-elig-fields').style.display = 'none';
+  document.getElementById('new-elig-arrow').innerHTML = '&#9658;';
+  document.getElementById('new-req-elig-op').value  = '';
+  document.getElementById('new-req-elig-val').value  = '';
+  document.getElementById('new-req-elig-msg').value  = '';
 
   // Reload Tab 1 and switch to it
   await reloadRequirements();
@@ -1921,8 +2356,9 @@ async function deleteService(id) {
       document.getElementById('requirements-list').innerHTML =
         '<div class="panel-empty">Select a category to view its requirements.</div>';
       document.getElementById('btn-add-category').style.display    = 'none';
-      document.getElementById('req-tab-bar').style.display         = 'none';
       document.getElementById('category-breadcrumb').style.display = 'none';
+      // Reset Panel 3 to empty state — clears stale inline styles from form mode.
+      setPanel3Mode('empty');
     }
     loadServices();
   }
@@ -1937,7 +2373,8 @@ async function deleteCategory(id, depth, parentId) {
       state.categoryPath = state.categoryPath.slice(0, depth);
       document.getElementById('requirements-list').innerHTML =
         '<div class="panel-empty">Select a category to view its requirements.</div>';
-      document.getElementById('req-tab-bar').style.display = 'none';
+      // Reset Panel 3 to empty state — clears any stale inline styles from form mode.
+      setPanel3Mode('empty');
     }
     const data = parentId
       ? await apiGet('{% url "admin_panel:ajax_get_categories" %}?parent_id=' + parentId)
@@ -2101,14 +2538,12 @@ async function selectForm(id, code, name) {
   // Update Panel 3 title
   document.getElementById('panel3-title').textContent = code + ' \u2014 ' + name;
 
-  // Hide the category tab bar + all tab content panels
-  document.getElementById('req-tab-bar').style.display = 'none';
-  document.querySelectorAll('.req-tab-content').forEach(function(el) {
-    el.style.display = 'none';
-  });
-
-  // Show form detail panel
-  document.getElementById('form-detail-panel').style.display = 'flex';
+  // Switch Panel 3 to form detail mode.
+  // WHY setPanel3Mode instead of the three direct DOM manipulations that were here:
+  //   setPanel3Mode('form') does the same three things (hide tab bar, hide tab content,
+  //   show form panel) but is now the single authority for this state — any future
+  //   function that needs to enter form mode calls setPanel3Mode(), not this code.
+  setPanel3Mode('form');
 
   // Refresh Panel 1 form list to show selection highlight
   loadForms();
@@ -2125,21 +2560,233 @@ function clearFormDetail() {
   state.formName = '';
   state.mode     = 'category';
 
-  document.getElementById('panel3-title').textContent = 'Requirements';
-  document.getElementById('form-detail-panel').style.display = 'none';
+  // Close the PDF panel if it was open — reset all its state.
+  closePdfPanel();
 
-  // Only restore category tab bar if a category is still selected
+  document.getElementById('panel3-title').textContent = 'Requirements';
+
+  // Return to the correct mode:
+  //   - If a category is still selected → 'category' (shows tab bar + requirements)
+  //   - If no category is selected → 'empty' (hides everything)
+  // WHY setPanel3Mode here instead of directly manipulating form-detail-panel:
+  //   setPanel3Mode('category') ALSO clears the stale inline style.display='none'
+  //   on .req-tab-content that selectForm() set. Without this, the tabs would
+  //   remain blank after closing the form detail panel.
+  setPanel3Mode(state.categoryId ? 'category' : 'empty');
   if (state.categoryId) {
-    document.getElementById('req-tab-bar').style.display = '';
-    document.querySelectorAll('.req-tab-content').forEach(function(el) {
-      el.style.display = '';     // let CSS .active class control visibility
-    });
-    switchTab('this');           // switch back to requirements tab
+    // Switch back to Tab 1 (This Category / requirements) so the admin sees
+    // the requirement list immediately after closing the form detail.
+    switchTab('this');
   }
 
   // Refresh form list so selection highlight is cleared
   loadForms();
 }
+
+// ── PDF Upload Panel ──────────────────────────────────────────
+//
+// These functions manage the inline PDF upload panel inside the form detail view.
+// Flow:
+//   openPdfPanel() → choosePdfFile() → onPdfFileChosen() → parsePdf()
+//   → renderPdfFields() → importPdfField() (per field)
+//
+// WHY inline panel (not a modal):
+//   The admin needs to compare extracted fields against the existing requirements
+//   list at the same time. An inline panel keeps everything visible.
+
+// Open the PDF upload panel (shown below the form header, above the tabs).
+function openPdfPanel() {
+  // Reset to empty state before showing — avoids stale data from a previous upload.
+  document.getElementById('pdf-file-input').value    = '';
+  document.getElementById('pdf-file-name').textContent  = 'No file chosen';
+  document.getElementById('pdf-parse-btn').style.display = 'none';
+  document.getElementById('pdf-parse-status').textContent = '';
+  document.getElementById('pdf-fields-list').innerHTML = '';
+  document.getElementById('pdf-refresh-row').style.display = 'none';
+  document.getElementById('pdf-upload-panel').style.display = '';
+}
+
+// Close the PDF upload panel and reset its state.
+function closePdfPanel() {
+  document.getElementById('pdf-upload-panel').style.display = 'none';
+  document.getElementById('pdf-file-input').value   = '';
+  document.getElementById('pdf-file-name').textContent = 'No file chosen';
+  document.getElementById('pdf-parse-btn').style.display  = 'none';
+  document.getElementById('pdf-parse-status').textContent = '';
+  document.getElementById('pdf-fields-list').innerHTML = '';
+}
+
+// Trigger the hidden <input type=file> — browser opens the file picker dialog.
+// WHY hidden input: browser file inputs can't be styled; we drive them from a visible button.
+function choosePdfFile() {
+  document.getElementById('pdf-file-input').click();
+}
+
+// Called by the file input's onchange event when the user picks a file.
+// Shows the file name and reveals the "Parse Fields" button.
+function onPdfFileChosen(input) {
+  var name = (input.files && input.files[0]) ? input.files[0].name : 'No file chosen';
+  document.getElementById('pdf-file-name').textContent   = name;
+  // Only reveal the parse button when a file is actually chosen.
+  document.getElementById('pdf-parse-btn').style.display = (input.files && input.files[0]) ? '' : 'none';
+  // Clear any previous parse results when a new file is chosen.
+  document.getElementById('pdf-parse-status').textContent = '';
+  document.getElementById('pdf-fields-list').innerHTML    = '';
+  document.getElementById('pdf-refresh-row').style.display = 'none';
+}
+
+// Upload the chosen PDF to the server and render the extracted fields.
+// Uses multipart/form-data (not JSON) because binary file data cannot go in JSON.
+async function parsePdf() {
+  if (!state.formId) { alert('Select a form first.'); return; }
+
+  var fileInput = document.getElementById('pdf-file-input');
+  if (!fileInput.files || !fileInput.files[0]) {
+    alert('Please choose a PDF file first.');
+    return;
+  }
+
+  var statusEl  = document.getElementById('pdf-parse-status');
+  var parseBtn  = document.getElementById('pdf-parse-btn');
+  parseBtn.disabled        = true;
+  parseBtn.textContent     = 'Parsing…';
+  statusEl.textContent     = 'Reading PDF fields — please wait…';
+  statusEl.style.color     = 'var(--slate)';
+  document.getElementById('pdf-fields-list').innerHTML = '';
+
+  // Build a FormData payload — this is the correct way to POST a file from JS.
+  // The field name 'pdf_file' must match what the view reads via request.FILES.get('pdf_file').
+  var formData = new FormData();
+  formData.append('pdf_file', fileInput.files[0]);
+  formData.append('csrfmiddlewaretoken', getCsrf());
+
+  try {
+    // WHY fetch without Content-Type header: browser sets it automatically for FormData
+    // (it includes the multipart boundary string). Setting it manually would break parsing.
+    var response = await fetch(
+      '/admin-panel/ajax/builder/form/' + state.formId + '/upload-pdf/',
+      { method: 'POST', body: formData }
+    );
+    var data = await response.json();
+
+    parseBtn.disabled    = false;
+    parseBtn.textContent = 'Parse Fields';
+
+    if (!data.ok) {
+      statusEl.textContent = '\u2717 ' + (data.error || 'Parse failed.');
+      statusEl.style.color = '#e53e3e';
+      return;
+    }
+
+    if (!data.fields || !data.fields.length) {
+      statusEl.textContent = data.message || 'No fillable fields found in this PDF.';
+      statusEl.style.color = 'var(--slate)';
+      return;
+    }
+
+    statusEl.textContent = '\u2713 Found ' + data.fields.length + ' field(s). Click \u201cAdd to Form\u201d to import.';
+    statusEl.style.color = '#2d6a4f';
+    renderPdfFields(data.fields);
+
+  } catch (err) {
+    parseBtn.disabled    = false;
+    parseBtn.textContent = 'Parse Fields';
+    statusEl.textContent = '\u2717 Network error: ' + err.message;
+    statusEl.style.color = '#e53e3e';
+  }
+}
+
+// Render the list of extracted PDF fields inside #pdf-fields-list.
+// Each row shows: label | type badge | Required marker | "Add to Form" button.
+function renderPdfFields(fields) {
+  var container = document.getElementById('pdf-fields-list');
+
+  // Type → friendly display label map.
+  // Mirrors the mapping in pdf_parser.py._map_fitz_type() and pipeline._map_field_type().
+  var typeLabels = {
+    'text':      'Text',
+    'checkbox':  'Checkbox',
+    'radio':     'Radio',
+    'dropdown':  'Dropdown',
+    'signature': 'Signature',
+  };
+
+  var html = fields.map(function(f, idx) {
+    var typeLabel = typeLabels[f.field_type] || f.field_type;
+    var reqMark   = f.is_required ? '<span style="color:#e53e3e; font-size:0.7rem; margin-left:0.2rem;" title="Required in PDF">*</span>' : '';
+
+    return (
+      '<div class="lib-item" id="pdf-field-row-' + idx + '"'
+      + ' style="display:flex; align-items:center; gap:0.5rem; padding:0.35rem 0.6rem;">'
+      + '<div style="flex:1; min-width:0;">'
+      + '<div style="font-size:0.82rem; font-weight:500; color:var(--navy);">'
+      + escHtml(f.label || f.field_id) + reqMark + '</div>'
+      + '<div style="font-size:0.7rem; color:var(--slate);">'
+      // field_id hint — the internal PDF identifier stored on FormRequirement for crawler cross-ref
+      + (f.field_id ? escHtml(f.field_id) + ' &nbsp;&middot;&nbsp; ' : '')
+      + '<span class="type-badge" style="margin-left:0;">' + escHtml(typeLabel) + '</span>'
+      + '</div>'
+      + '</div>'
+      + '<button class="btn btn-sm btn-outline" style="font-size:0.72rem; white-space:nowrap; flex-shrink:0;"'
+      // WHY data-* attributes: pass field data to importPdfField() without global state.
+      // idx is the field's position in the returned array — used to identify the row for update.
+      + ' data-idx="' + idx + '"'
+      + ' data-label="' + escHtml(f.label || f.field_id) + '"'
+      + ' data-type="'  + escHtml(f.field_type) + '"'
+      + ' data-req="'   + (f.is_required ? '1' : '0') + '"'
+      + ' data-fid="'   + escHtml(f.field_id || '') + '"'
+      + ' onclick="importPdfField(this)">'
+      + 'Add to Form'
+      + '</button>'
+      + '</div>'
+    );
+  }).join('');
+
+  container.innerHTML = html || '<div class="panel-empty">No fields to display.</div>';
+}
+
+// Import one PDF field as a Requirement and link it to the current form.
+// btn = the clicked "Add to Form" button element (carries data-* attributes).
+async function importPdfField(btn) {
+  if (!state.formId) return;
+
+  // Read field data from the button's data-* attributes.
+  var label     = btn.getAttribute('data-label');
+  var fieldType = btn.getAttribute('data-type');
+  var isReq     = btn.getAttribute('data-req') === '1';
+  var fieldId   = btn.getAttribute('data-fid');
+
+  btn.disabled    = true;
+  btn.textContent = 'Adding…';
+
+  var res = await apiPost(
+    '/admin-panel/ajax/builder/form/' + state.formId + '/import-pdf-field/',
+    {
+      label:      label,
+      field_type: fieldType,
+      is_required: isReq,
+      field_id:   fieldId,
+    }
+  );
+
+  if (res.ok) {
+    // Show a green checkmark on the button so admin knows it was imported.
+    // WHY not remove the row: admin may want to import multiple fields one at a time
+    // and needs to see which ones are done vs pending.
+    btn.textContent      = res.already_linked ? '\u2713 Already Linked' : '\u2713 Added';
+    btn.style.color      = '#2d6a4f';
+    btn.style.borderColor = '#2d6a4f';
+    btn.disabled = true;
+
+    // Show the refresh button so admin can update the requirements list.
+    document.getElementById('pdf-refresh-row').style.display = '';
+  } else {
+    btn.disabled    = false;
+    btn.textContent = 'Add to Form';
+    alert((res.error) || 'Could not import field.');
+  }
+}
+
 
 // Fetch and render the full form detail in Panel 3.
 async function reloadFormDetail() {
@@ -2149,8 +2796,14 @@ async function reloadFormDetail() {
   // ── Header ──
   document.getElementById('form-detail-title').textContent =
     data.form.code + ' \u2014 ' + data.form.name;
+
+  // WHY count from arrays (not data.form.req_count):
+  //   The view doesn't return req_count / category_count in the form dict.
+  //   Calculating from the returned arrays is always accurate and needs no extra DB query.
+  var reqCount = (data.form_requirements || []).length;
+  var catCount = (data.used_in_categories || []).length;
   document.getElementById('form-detail-meta').textContent =
-    data.form.req_count + ' requirements \u00b7 ' + data.form.category_count + ' categories';
+    reqCount + ' requirements \u00b7 ' + catCount + ' categories';
 
   // ── Source URL ──
   var urlDiv   = document.getElementById('form-detail-url');
@@ -2167,8 +2820,11 @@ async function reloadFormDetail() {
   }
 
   // ── Tab content ──
-  renderFormRequirements(data.requirements || []);
-  renderFormCategories(data.categories || []);
+  // WHY use data.form_requirements / data.used_in_categories:
+  //   These are the exact keys the view returns (ajax_get_form_detail in views.py).
+  //   Using data.requirements or data.categories would return undefined → empty list.
+  renderFormRequirements(data.form_requirements || []);
+  renderFormCategories(data.used_in_categories || []);
 }
 
 // Render requirements inside a form, grouped by form_section.
@@ -2518,6 +3174,131 @@ async function submitImportUrl() {
   alert(res.message || (res.ok ? 'URL saved.' : 'Error saving URL.'));
   if (res.ok) await reloadFormDetail();   // refresh header to show the updated source URL
 }
+
+// ── Crawler Bar ───────────────────────────────────────────────
+// These functions manage the crawler bar in Panel 3.
+// The bar is shown/hidden and populated by updateCrawlerBar(), which is called
+// from renderRequirements() each time a category is selected.
+
+// updateCrawlerBar — populate and show the crawler bar for the selected category.
+// Called with the 'category' dict from the ajax_get_category_detail AJAX response.
+function updateCrawlerBar(catData) {
+  var bar         = document.getElementById('crawler-bar');
+  var urlInput    = document.getElementById('crawler-url-input');
+  var lastCrawled = document.getElementById('crawler-last-crawled');
+  var reviewLink  = document.getElementById('crawler-review-link');
+  var pendingEl   = document.getElementById('crawler-pending-count');
+  var statusEl    = document.getElementById('crawler-status');
+
+  // Show the bar now that a category is selected
+  bar.style.display = '';
+
+  // Pre-fill the URL input with the current source_url (empty if not set)
+  urlInput.value = catData.source_url || '';
+
+  // Show "Last crawled: X" or nothing
+  lastCrawled.textContent = catData.last_crawled_at
+    ? 'Last crawled: ' + catData.last_crawled_at
+    : 'Never crawled';
+
+  // Show/hide pending badge
+  var pending = catData.pending_suggestions || 0;
+  if (pending > 0) {
+    pendingEl.textContent    = pending;
+    reviewLink.style.display = '';
+  } else {
+    reviewLink.style.display = 'none';
+  }
+
+  // Clear status message from any previous crawl
+  statusEl.textContent = '';
+}
+
+// hideCrawlerBar — called when no category is selected (service change etc.)
+function hideCrawlerBar() {
+  document.getElementById('crawler-bar').style.display = 'none';
+}
+
+// saveCrawlerUrl — POST the new source URL to the backend.
+async function saveCrawlerUrl() {
+  var url = document.getElementById('crawler-url-input').value.trim();
+  var statusEl = document.getElementById('crawler-status');
+
+  if (!state.categoryId) {
+    alert('Select a category first.');
+    return;
+  }
+
+  statusEl.textContent = 'Saving…';
+
+  var res = await apiPost(
+    '/admin-panel/ajax/builder/category/' + state.categoryId + '/source-url/',
+    { source_url: url }
+  );
+
+  if (res.ok) {
+    statusEl.textContent = '✓ Saved';
+    // Clear the "saved" message after 2 seconds
+    setTimeout(function() { statusEl.textContent = ''; }, 2000);
+  } else {
+    statusEl.textContent = '✗ Error saving URL';
+  }
+}
+
+// triggerCrawl — POST to crawl_category_view and update the bar with results.
+async function triggerCrawl() {
+  if (!state.categoryId) { alert('Select a category first.'); return; }
+
+  var urlInput = document.getElementById('crawler-url-input').value.trim();
+  if (!urlInput) {
+    alert('Enter a Source URL before crawling.');
+    return;
+  }
+
+  var statusEl = document.getElementById('crawler-status');
+  var btn      = document.getElementById('crawl-now-btn');
+
+  // Disable button and show progress
+  btn.disabled         = true;
+  btn.textContent      = 'Crawling…';
+  statusEl.textContent = 'Fetching page and PDFs — this may take 10–30 seconds…';
+
+  // First save the URL in case it was just typed but not yet saved
+  await saveCrawlerUrl();
+
+  // POST to the crawl endpoint — this can take 10–30 seconds (HTTP requests)
+  var crawlUrl = '/admin-panel/categories/' + state.categoryId + '/crawl/';
+  var res = await apiPost(crawlUrl, {});
+
+  btn.disabled    = false;
+  btn.textContent = 'Crawl Now';
+
+  if (res.ok) {
+    statusEl.textContent = '✓ Done: ' + res.created + ' new, ' + res.skipped + ' skipped';
+    if (res.warnings && res.warnings.length) {
+      statusEl.textContent += ' (' + res.warnings.length + ' warnings)';
+    }
+
+    // Update pending badge with the new count
+    var reviewLink = document.getElementById('crawler-review-link');
+    var pendingEl  = document.getElementById('crawler-pending-count');
+    if (res.created > 0) {
+      // Fetch fresh count
+      var detail = await apiGet('/admin-panel/ajax/builder/category/' + state.categoryId + '/');
+      var pending = detail.category.pending_suggestions || 0;
+      if (pending > 0) {
+        pendingEl.textContent    = pending;
+        reviewLink.style.display = '';
+      }
+      // Update last crawled timestamp
+      document.getElementById('crawler-last-crawled').textContent =
+        'Last crawled: just now';
+    }
+  } else {
+    statusEl.textContent = '✗ Error: ' + (res.error || 'Crawl failed');
+  }
+}
+
 
 // ── Init ──────────────────────────────────────────────────────
 // Load services and sections when the page first opens.

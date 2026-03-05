@@ -17,6 +17,7 @@ from django.utils.text import slugify
 #   10. Case                 — a user's application for a category
 #   11. CaseAnswer           — answers to requirements for a specific case
 #   12. CaseRequirement      — per-case active/inactive tracking of requirements
+#   13. CrawlerSuggestion    — pending items found by crawler; admin reviews before saving
 #
 # KEY DESIGN CHANGE (Phase 1):
 #   Previously: Requirement had a direct FK to Category (one category only).
@@ -90,6 +91,30 @@ class Category(models.Model):
     description = models.TextField(blank=True, null=True)
     created_at  = models.DateTimeField(auto_now_add=True)
     is_active   = models.BooleanField(default=True)
+
+    # ── Crawler fields ────────────────────────────────────────
+    # source_url: the government/IRCC page that describes this category's program.
+    # The crawler reads this URL, extracts eligibility criteria, required forms, and
+    # requirement questions, then creates CrawlerSuggestion rows for admin review.
+    # Examples: "https://www.canada.ca/en/immigration-refugees-citizenship/..."
+    # Leave blank = no automated crawl for this category.
+    # EXPAND: support multiple source URLs per category if the program is documented
+    #         across several government pages (add a CategorySourceURL model).
+    source_url      = models.URLField(
+        max_length=500,
+        blank=True,
+        null=True,
+        help_text='Government page describing this program. Used by the crawler to auto-populate requirements and forms.',
+    )
+
+    # last_crawled_at: timestamp of the last successful crawl run.
+    # Used by the admin UI to show "Last crawled X days ago" and to schedule re-crawls
+    # when the source page may have changed.
+    last_crawled_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='Set automatically each time the crawler successfully processes this category.',
+    )
 
     def save(self, *args, **kwargs):
         # Auto-generate slug from name on first save. Duplicates get -2, -3 …
@@ -722,3 +747,165 @@ class CaseRequirement(models.Model):
     def __str__(self):
         status = 'active' if self.is_active else 'removed'
         return f'{self.requirement.name} → Case #{self.case.id} ({status})'
+
+
+# ── 13. CRAWLER SUGGESTION ────────────────────────────────────
+# One row per item that the crawler found on a category's source_url.
+# The admin reviews these before anything is permanently saved to the requirement library.
+#
+# WHY a separate model instead of auto-saving:
+#   Government pages are messy. NLP matching is imperfect. The crawler SHOULD NOT
+#   silently add or modify requirements — the admin must approve every suggestion.
+#   This prevents nonsense requirements (e.g. boilerplate text parsed as a question).
+#
+# Workflow:
+#   1. Admin clicks "Crawl" on a category in the service builder
+#   2. pipeline.crawl_category(category) runs → creates CrawlerSuggestion rows (status='pending')
+#   3. Admin visits /admin-panel/crawler/review/ → sees all pending suggestions
+#   4. Accept → creates/updates library item; Reject → marks as rejected (kept for audit trail)
+#   5. Category's last_crawled_at is updated after each run
+#
+# EXPAND: add 'confidence_threshold' setting so low-confidence suggestions are auto-rejected.
+# EXPAND: add 'crawl_log' TextField for storing raw errors/warnings from the crawl run.
+
+class CrawlerSuggestion(models.Model):
+
+    # ── What type of thing was found ──────────────────────────
+    # 'requirement'  → a question or document field found on the page or in a PDF
+    # 'eligibility'  → a condition found (e.g. "must be 18+", "must not have criminal record")
+    # 'form'         → a government form (PDF URL) found linked on the page
+    # EXPAND: add 'document' type for supporting documents listed (birth certificate, etc.)
+    SUGGESTION_TYPE_CHOICES = [
+        ('requirement', 'Requirement / Question'),
+        ('eligibility', 'Eligibility Condition'),
+        ('form',        'Government Form (PDF)'),
+    ]
+
+    # ── What happened when admin reviewed it ──────────────────
+    # 'pending'  → not yet reviewed — shown in the review queue
+    # 'accepted' → admin accepted; library item created/linked
+    # 'rejected' → admin rejected; kept in DB for audit but not applied
+    # EXPAND: add 'deferred' status so admin can mark "review later" without accepting/rejecting
+    STATUS_CHOICES = [
+        ('pending',  'Pending Review'),
+        ('accepted', 'Accepted'),
+        ('rejected', 'Rejected'),
+    ]
+
+    # Which category's source_url produced this suggestion
+    category        = models.ForeignKey(
+        Category,
+        on_delete=models.CASCADE,
+        related_name='crawler_suggestions',
+        help_text='The category whose source_url was crawled to produce this suggestion.',
+    )
+
+    suggestion_type = models.CharField(
+        max_length=20,
+        choices=SUGGESTION_TYPE_CHOICES,
+        default='requirement',
+    )
+
+    status          = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='pending',
+    )
+
+    # ── Raw text from the crawl ────────────────────────────────
+    # The text EXACTLY as extracted from the page or PDF — no interpretation.
+    # WHY store raw text: lets admin see what the crawler actually found before
+    # any NLP processing, and lets you re-run NLP matching with a better model later.
+    raw_text        = models.TextField(
+        help_text='Raw text extracted from the source page or PDF before NLP processing.',
+    )
+
+    # ── Suggested requirement details ─────────────────────────
+    # These are filled in by the NLP matcher — best-guess values the admin can edit.
+    suggested_name  = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text='NLP-suggested requirement name (admin can edit before accepting).',
+    )
+    suggested_type  = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text='NLP-suggested type: text, date, boolean, select, file, info_text.',
+    )
+
+    # For 'form' suggestions: the URL of the discovered PDF
+    suggested_url   = models.URLField(
+        max_length=500,
+        blank=True,
+        help_text='URL of the discovered PDF or form page.',
+    )
+
+    # ── NLP matching ──────────────────────────────────────────
+    # matched_requirement: the BEST library match the NLP found.
+    # If confidence is high enough, admin can accept with one click.
+    # If None, admin must create a new requirement from scratch.
+    matched_requirement = models.ForeignKey(
+        Requirement,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='crawler_suggestions',
+        help_text='Best-matching existing Requirement found by NLP. Null = no match found.',
+    )
+
+    # Confidence score from 0.0 to 1.0.
+    # 1.0 = certain match, 0.0 = no match.
+    # EXPAND: adjust the threshold in nlp_matcher.py → MIN_CONFIDENCE constant.
+    match_confidence = models.FloatField(
+        default=0.0,
+        help_text='NLP match confidence: 0.0 = no match, 1.0 = certain match.',
+    )
+
+    # ── Eligibility-specific fields ───────────────────────────
+    # Used when suggestion_type='eligibility'.
+    # Stores the raw condition text (e.g. "Age must be at least 18 years")
+    # and the NLP-parsed operator/value (may be empty if parsing failed).
+    eligibility_operator = models.CharField(
+        max_length=30,
+        blank=True,
+        help_text='NLP-parsed operator: gte, lte, eq, etc. May be empty if parsing failed.',
+    )
+    eligibility_value    = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text='NLP-parsed threshold value. May be empty if parsing failed.',
+    )
+
+    # ── Review audit trail ────────────────────────────────────
+    created_at  = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        'users.AdminProfile',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='reviewed_suggestions',
+        help_text='Admin who accepted or rejected this suggestion.',
+    )
+
+    # ── Result tracking ───────────────────────────────────────
+    # After accepting, we record what was created so the admin can undo or edit it.
+    created_requirement = models.ForeignKey(
+        Requirement,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='created_from_suggestion',
+        help_text='Requirement that was created when this suggestion was accepted. Null = not accepted or linked existing.',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        # Most recent crawl first in the review queue
+
+    def __str__(self):
+        return f'[{self.get_status_display()}] {self.get_suggestion_type_display()}: {self.suggested_name or self.raw_text[:60]}'
+
+    def is_pending(self):
+        """Quick helper used in templates to avoid hard-coding the string 'pending'."""
+        return self.status == 'pending'

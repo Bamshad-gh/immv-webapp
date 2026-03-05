@@ -1314,10 +1314,21 @@ def service_list(request):
         {
             'service':        s,
             'category_count': s.categories.filter(is_active=True).count(),
-            'req_count':      Requirement.objects.filter(
-                                  category__service=s,
-                                  is_active=True
-                              ).count(),
+            # WHY this traversal:
+            # After Phase 1, Requirement has NO direct category FK.
+            # The M2M bridge is CategoryRequirement (category_requirements related_name).
+            # Path: Requirement → category_requirements (CategoryRequirement) → category → service
+            # .distinct() prevents double-counting if the same Requirement is linked to
+            # multiple categories within the same service.
+            'req_count':      (
+                Requirement.objects
+                .filter(
+                    category_requirements__category__service=s,
+                    is_active=True
+                )
+                .distinct()
+                .count()
+            ),
         }
         for s in services
     ]
@@ -1597,13 +1608,26 @@ def ajax_get_category_detail(request, category_id):
                 })
         current = current.parent
 
+    # Pending crawler suggestions for this category — used by the builder UI
+    # to show a badge ("3 pending") on the Crawl button without a separate request.
+    from cases.models import CrawlerSuggestion
+    pending_count = CrawlerSuggestion.objects.filter(
+        category=category, status='pending'
+    ).count()
+
     return JsonResponse({
         'category': {
-            'id':          category.id,
-            'name':        category.name,
-            'description': category.description or '',
-            'service_id':  category.service_id,
-            'parent_id':   category.parent_id,
+            'id':             category.id,
+            'name':           category.name,
+            'description':    category.description or '',
+            'service_id':     category.service_id,
+            'parent_id':      category.parent_id,
+            # Crawler fields — used by the builder's source URL + Crawl button UI
+            'source_url':     category.source_url or '',
+            'last_crawled_at': (
+                category.last_crawled_at.strftime('%Y-%m-%d %H:%M') if category.last_crawled_at else ''
+            ),
+            'pending_suggestions': pending_count,
         },
         'own_requirements': own_reqs,
         'inherited':        inherited,
@@ -1646,6 +1670,18 @@ def ajax_create_requirement(request):
     category_id     = body.get('category_id')
     profile_mapping = body.get('profile_mapping', '').strip()
 
+    # Phase 4: eligibility gate fields — sent when admin checks "⚑ Mark as Eligibility Gate"
+    # in the Create New tab. Defaults to False/empty so existing callers without these
+    # keys continue to work unchanged (backward-compatible).
+    # WHY accept here (not just in ajax_edit_requirement):
+    #   When creating an eligibility gate from scratch, the admin should be able to set
+    #   the operator + value in the same form — forcing a two-step create-then-edit flow
+    #   is unnecessarily slow for a common admin action.
+    is_eligibility           = bool(body.get('is_eligibility',           False))
+    eligibility_operator     = body.get('eligibility_operator',           '').strip()
+    eligibility_value        = body.get('eligibility_value',              '').strip()
+    eligibility_fail_message = body.get('eligibility_fail_message',       '').strip()
+
     # ── Validate ──────────────────────────────────────────────────────
     errors      = {}
     valid_types = [t[0] for t in Requirement.TYPE_CHOICES]
@@ -1684,6 +1720,11 @@ def ajax_create_requirement(request):
         is_required     = bool(is_required),
         section         = section,
         profile_mapping = profile_mapping or None,
+        # Phase 4: eligibility gate — store None (not '') so DB NULLs are clean
+        is_eligibility           = is_eligibility,
+        eligibility_operator     = eligibility_operator     or None,
+        eligibility_value        = eligibility_value        or None,
+        eligibility_fail_message = eligibility_fail_message or None,
     )
 
     # ── Optionally link to a category (creates CategoryRequirement) ───
@@ -1872,7 +1913,37 @@ def ajax_edit_category(request, category_id):
             'is_active':   category.is_active,
         }
     })
-    
+
+
+# ── AJAX: Set Category Source URL ─────────────────────────────
+
+@admin_required
+@require_http_methods(['POST'])
+def ajax_set_category_source_url(request, category_id):
+    """
+    POST /ajax/builder/category/<id>/source-url/
+    Body: { source_url: 'https://...' }   (empty string = clear the URL)
+    Response: { ok: true, source_url: '...' }
+
+    Saves the government page URL that the crawler will read for this category.
+    WHY a separate endpoint instead of including in ajax_edit_category:
+      source_url has its own UX in the builder (save inline, then "Crawl Now").
+      Separating it avoids the full category edit form reload cycle.
+    """
+    category = get_object_or_404(Category, id=category_id)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'error': 'Invalid JSON'}, status=400)
+
+    source_url = body.get('source_url', '').strip()
+    category.source_url = source_url or None  # store None (not empty string) when cleared
+    category.save(update_fields=['source_url'])
+
+    return JsonResponse({'ok': True, 'source_url': source_url})
+
+
 @admin_required
 @require_http_methods(['POST'])
 def ajax_delete_service(request, service_id):
@@ -2942,6 +3013,252 @@ def ajax_import_from_url(request):
     })
 
 
+# ── POST: Upload a fillable PDF and extract its AcroForm fields ─
+@admin_required
+@require_http_methods(['POST'])
+def ajax_upload_form_pdf(request, form_id):
+    """
+    POST /ajax/builder/form/<id>/upload-pdf/
+
+    Accepts a fillable PDF uploaded as multipart/form-data (field name: 'pdf_file').
+    Passes the raw bytes to cases.crawler.pdf_parser.extract_pdf_fields() which reads
+    the PDF's AcroForm structure (the locked/interactive layer that contains the form
+    fields — text inputs, checkboxes, dropdowns, etc.).
+
+    Response (success):
+      {
+        'ok':     true,
+        'fields': [
+          {
+            'field_id':   'Section2_FamilyName',   # internal PDF field name
+            'label':      'Family Name',            # cleaned human-readable label
+            'field_type': 'text',                   # text | checkbox | radio | dropdown | signature
+            'is_required': false,                   # AcroForm Required flag
+            'options':    []                        # choices for dropdown/radio; empty otherwise
+          },
+          ...
+        ],
+        'message': ''     # empty on success; descriptive on no-fields result
+      }
+
+    Response (error):
+      {'ok': false, 'error': 'No PDF file uploaded.'}
+
+    WHY multipart/form-data (not JSON):
+      JSON cannot carry binary file content. The browser's FormData API posts
+      multipart/form-data, which Django's request.FILES handles natively.
+
+    WHY return fields to the JS (not create DB rows immediately):
+      The admin reviews the extracted fields before importing. They can:
+        - Skip fields they don't need (signature pages, internal tracking fields)
+        - Rename a label before importing
+        - Check the type mapping (checkbox → boolean) before committing
+      The actual DB rows are created by ajax_import_pdf_field_to_form().
+
+    EXPAND: add a 'form_section' detection pass — many IMM PDFs have section headers
+            embedded in field names (Section2_FamilyName → section "Section 2").
+            Auto-grouping by section makes the review list easier to scan.
+
+    REQUIRES: pip install pypdf  OR  pip install pymupdf
+              Both are listed in pdf_parser.py. Without them, fields returns [].
+    """
+    from cases.crawler.pdf_parser import extract_pdf_fields
+
+    # ── Check that at least one PDF library is installed BEFORE reading the file ──
+    # WHY check here (not inside pdf_parser): the view is the user-facing boundary.
+    # Returning a clear error with the exact install command avoids a confusing
+    # "No fillable fields found" message that makes admins think the PDF is wrong
+    # when the real problem is a missing package.
+    # CUSTOMIZE: add 'pdfminer' to the try chain if you use a different library.
+    try:
+        import pypdf          # noqa: F401 — only checking existence, not using
+        _pdf_lib = 'pypdf'
+    except ImportError:
+        try:
+            import fitz       # noqa: F401 — PyMuPDF's import name is 'fitz'
+            _pdf_lib = 'pymupdf'
+        except ImportError:
+            _pdf_lib = None
+
+    if _pdf_lib is None:
+        return JsonResponse({
+            'ok':    False,
+            'error': (
+                'No PDF parsing library is installed. '
+                'Open a terminal in your project folder and run:\n'
+                '  venvcts/Scripts/pip install pypdf\n'
+                'Then restart the Django development server. '
+                'pypdf reads AcroForm interactive PDFs (fillable IMM forms).'
+            ),
+        })
+
+    # Verify the form exists and is active before processing the upload.
+    # WHY no variable assignment: we only need the 404-or-continue effect here;
+    # the form object itself is not needed since we're just parsing the PDF bytes.
+    get_object_or_404(GovernmentForm, id=form_id, is_active=True)
+
+    pdf_file = request.FILES.get('pdf_file')
+    if not pdf_file:
+        return JsonResponse({'ok': False, 'error': 'No PDF file uploaded.'})
+    if not pdf_file.name.lower().endswith('.pdf'):
+        return JsonResponse({'ok': False, 'error': 'File must be a PDF (must end in .pdf).'})
+
+    # Cap at 20MB — IMM forms are typically 1–5MB.
+    # CUSTOMIZE: raise this limit if IRCC releases bundled form packages.
+    MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+    if pdf_file.size > MAX_UPLOAD_BYTES:
+        return JsonResponse({'ok': False, 'error': 'PDF too large (max 20 MB).'})
+
+    pdf_bytes = pdf_file.read()
+    fields    = extract_pdf_fields(pdf_bytes)
+
+    if not fields:
+        return JsonResponse({
+            'ok':      True,
+            'fields':  [],
+            'message': (
+                'No fillable fields found. '
+                'The PDF may not be an AcroForm (interactive) PDF. '
+                'IMM forms are usually fillable — make sure you downloaded the PDF '
+                'directly from IRCC (not a printed scan). '
+                f'Library in use: {_pdf_lib}.'
+            ),
+        })
+
+    return JsonResponse({
+        'ok':      True,
+        'fields':  fields,
+        'message': '',
+    })
+
+
+# ── POST: Import one PDF field as a Requirement and link to the form ─
+@admin_required
+@require_http_methods(['POST'])
+def ajax_import_pdf_field_to_form(request, form_id):
+    """
+    POST /ajax/builder/form/<id>/import-pdf-field/
+
+    Creates (or reuses) a Requirement in the global library based on one PDF field
+    extracted by ajax_upload_form_pdf(), then links it to the form via FormRequirement.
+
+    Body (JSON):
+      {
+        'label':       'Family Name',      # field label → becomes Requirement.name
+        'field_type':  'text',             # raw PDF field type (text|checkbox|radio|dropdown|signature)
+        'is_required': false,              # AcroForm Required flag
+        'field_id':    'Section2_FamilyName',  # optional: stored on FormRequirement for crawler cross-reference
+        'form_section': 'Personal Information', # optional: section grouping inside this form
+      }
+
+    Response (success):
+      {
+        'ok': true,
+        'created': true,        # true = new Requirement was created; false = reused existing
+        'requirement_id': <id>,
+        'fr_id': <FormRequirement id>,
+        'name':  'Family Name',
+        'type':  'text',
+      }
+
+    WHY 'get_or_create' on Requirement.name:
+      IMM forms share many field names (e.g. "Date of Birth" appears in IMM5257 and IMM5710).
+      Reusing the same Requirement object keeps the library lean and avoids duplicates.
+      The admin can see 'created: false' in the JS and know it was linked, not re-created.
+
+    WHY store field_id on FormRequirement:
+      The field_id ('Section2_FamilyName') is a PDF-specific identifier used by the crawler
+      to cross-reference future crawl results back to the same field. Storing it here means
+      subsequent PDF uploads of updated IRCC forms can detect which fields changed.
+
+    EXPAND: run NLP matching before creating a new Requirement to find similar existing ones.
+            Use cases.crawler.nlp_matcher.find_best_match(label, Requirement.objects.filter(is_active=True))
+            and return the match to the JS so the admin can accept/reject it.
+    """
+    from django.db.models import Max as _Max
+
+    form = get_object_or_404(GovernmentForm, id=form_id, is_active=True)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'error': 'Invalid JSON body.'}, status=400)
+
+    # ── Validate input ─────────────────────────────────────────
+    label = body.get('label', '').strip()
+    if not label:
+        return JsonResponse({'ok': False, 'error': 'label is required.'})
+
+    raw_field_type = body.get('field_type', 'text')
+    is_required    = bool(body.get('is_required', False))
+    field_id       = body.get('field_id', '').strip()
+    form_section   = body.get('form_section', '').strip()
+
+    # Map the raw PDF field type to the Requirement.type choices.
+    # This reuses the same mapping as pipeline._map_field_type().
+    type_map = {
+        'text':      'text',
+        'checkbox':  'boolean',
+        'radio':     'boolean',
+        'dropdown':  'select',
+        'signature': 'file',
+    }
+    req_type = type_map.get(raw_field_type, 'text')
+
+    # ── Get or create Requirement ──────────────────────────────
+    # WHY get_or_create on name (case-insensitive):
+    #   "Family Name" in IMM5710 and IMM5257 should map to the SAME Requirement.
+    #   We match on name (case-insensitive) to avoid duplicates from slight casing differences.
+    existing = Requirement.objects.filter(name__iexact=label, is_active=True).first()
+    if existing:
+        req     = existing
+        created = False
+    else:
+        req = Requirement.objects.create(
+            name        = label,
+            type        = req_type,
+            is_required = is_required,
+            is_active   = True,
+        )
+        created = True
+
+    # ── Link to form via FormRequirement ──────────────────────
+    # If already linked, just return success (idempotent — no duplicate FR rows).
+    existing_fr = FormRequirement.objects.filter(form=form, requirement=req).first()
+    if existing_fr:
+        return JsonResponse({
+            'ok':             True,
+            'created':        False,
+            'requirement_id': req.id,
+            'fr_id':          existing_fr.id,
+            'name':           req.name,
+            'type':           req.type,
+            'already_linked': True,  # JS can show a subtle "already in form" note
+        })
+
+    # Place the new FormRequirement at the end of the current list.
+    max_order = (
+        FormRequirement.objects.filter(form=form).aggregate(m=_Max('order'))['m'] or 0
+    )
+    fr = FormRequirement.objects.create(
+        form         = form,
+        requirement  = req,
+        form_section = form_section,
+        field_id     = field_id,
+        order        = max_order + 1,
+    )
+
+    return JsonResponse({
+        'ok':             True,
+        'created':        created,
+        'requirement_id': req.id,
+        'fr_id':          fr.id,
+        'name':           req.name,
+        'type':           req.type,
+        'already_linked': False,
+    })
+
+
 # ══════════════════════════════════════════════════════════════
 # TASK VIEWS
 # ══════════════════════════════════════════════════════════════
@@ -3857,3 +4174,252 @@ def eligibility_quiz(request, user_id):
         'questions':   questions,
         'quiz_url':    request.path,
     })
+
+
+# ═══════════════════════════════════════════════════════════════
+# CRAWLER VIEWS
+# ═══════════════════════════════════════════════════════════════
+# These views tie the cases/crawler/ package into the admin UI.
+# Flow:
+#   1. Admin sets source_url on a category in the service builder
+#   2. Admin clicks "Crawl Now" → POST to crawl_category_view
+#   3. pipeline.crawl_category() runs → creates CrawlerSuggestion rows
+#   4. Admin visits crawler_review to accept/reject each suggestion
+#   5. Accepting a suggestion creates the Requirement or GovernmentForm in the library
+
+
+# ── 1. Trigger a crawl for a category ─────────────────────────
+@admin_permission_required('can_manage_content')
+def crawl_category_view(request, category_id):
+    """
+    POST /admin-panel/categories/<category_id>/crawl/
+
+    Triggers the crawler pipeline for one category.
+    Runs synchronously (blocks the request) — see EXPAND note for async option.
+    Returns JSON so the builder's "Crawl Now" button can show a result message.
+
+    Response:
+      {'ok': True, 'created': 5, 'skipped': 2, 'warnings': [...]}
+      {'ok': False, 'error': 'No source_url set'}
+
+    WHY POST only:
+      Crawling writes to the DB (creates CrawlerSuggestion rows).
+      GET should not have side effects — HTTP convention.
+
+    EXPAND: wrap in a Celery task for non-blocking async execution:
+      from cases.crawler.pipeline import crawl_category
+      from django.shortcuts import get_object_or_404
+      result = crawl_category_task.delay(category_id)  # returns task ID immediately
+      return JsonResponse({'ok': True, 'task_id': result.id})
+      # Then add a /crawler/task/<task_id>/status/ endpoint to poll the result
+    """
+    from cases.models import Category
+    from cases.crawler.pipeline import crawl_category
+
+    if request.method != 'POST':
+        return JsonResponse({'ok': False, 'error': 'POST required.'}, status=405)
+
+    category = get_object_or_404(Category, id=category_id, is_active=True)
+
+    # Run the crawl pipeline — this makes HTTP requests so may take 5–30 seconds
+    result = crawl_category(category)
+
+    status_code = 200 if result['ok'] else 400
+    return JsonResponse(result, status=status_code)
+
+
+# ── 2. Review queue (list pending suggestions) ─────────────────
+@admin_permission_required('can_manage_content')
+def crawler_review(request):
+    """
+    GET /admin-panel/crawler/review/
+
+    Shows all pending CrawlerSuggestion rows grouped by category.
+    Admin can filter by type (requirement / eligibility / form).
+    Accepted/rejected suggestions are also shown (collapsed by default) for audit.
+
+    Context:
+      pending_by_category: {category: [suggestion, ...]} — ordered newest-first
+      accepted_count:       int
+      rejected_count:       int
+      filter_type:          str — current type filter ('' = all)
+    """
+    from cases.models import CrawlerSuggestion
+
+    filter_type = request.GET.get('type', '').strip()
+
+    # Fetch all suggestions with related data in as few queries as possible.
+    # select_related covers category + matched_requirement + reviewed_by in one JOIN.
+    qs = (
+        CrawlerSuggestion.objects
+        .select_related('category', 'matched_requirement', 'reviewed_by__user')
+        .order_by('-created_at')
+    )
+
+    if filter_type:
+        qs = qs.filter(suggestion_type=filter_type)
+
+    # Group pending suggestions by category for the template
+    pending     = qs.filter(status='pending')
+    pending_by_category = {}
+    for suggestion in pending:
+        cat = suggestion.category
+        if cat not in pending_by_category:
+            pending_by_category[cat] = []
+        pending_by_category[cat].append(suggestion)
+
+    return render(request, 'admin_panel/crawler_review.html', {
+        'pending_by_category': pending_by_category,
+        'pending_count':       pending.count(),
+        'accepted_count':      qs.filter(status='accepted').count(),
+        'rejected_count':      qs.filter(status='rejected').count(),
+        'filter_type':         filter_type,
+        'type_choices':        [('', 'All types'), ('requirement', 'Requirements'),
+                                ('eligibility', 'Eligibility'), ('form', 'Forms')],
+    })
+
+
+# ── 3. Accept a suggestion ─────────────────────────────────────
+@admin_permission_required('can_manage_content')
+def accept_suggestion(request, suggestion_id):
+    """
+    POST /admin-panel/crawler/suggestions/<suggestion_id>/accept/
+
+    Accepts a pending suggestion and creates the appropriate library item:
+      - 'requirement'  → create Requirement + CategoryRequirement (link to category)
+      - 'eligibility'  → create Requirement (is_eligibility=True) + CategoryRequirement
+      - 'form'         → create GovernmentForm + CategoryForm (link to category)
+
+    POST params (all optional — override NLP suggestions):
+      name:                 str — overrides suggested_name
+      req_type:             str — overrides suggested_type (for requirement/eligibility)
+      operator:             str — eligibility operator (gte/lte/eq/...)
+      value:                str — eligibility threshold value
+      fail_message:         str — message shown to user when they don't meet eligibility
+      link_to_requirement:  int — link to existing requirement ID instead of creating new
+      form_code:            str — for 'form' type: the IMM form code
+
+    Returns JSON for AJAX button handling.
+    """
+    from django.utils import timezone
+    from cases.models import (
+        CrawlerSuggestion, Requirement, CategoryRequirement,
+        RequirementSection, GovernmentForm, CategoryForm,
+    )
+    from users.models import AdminProfile
+
+    if request.method != 'POST':
+        return JsonResponse({'ok': False, 'error': 'POST required.'}, status=405)
+
+    suggestion  = get_object_or_404(CrawlerSuggestion, id=suggestion_id, status='pending')
+    admin_prof  = getattr(request.user, 'admin_profile', None)
+
+    # ── Common params ─────────────────────────────────────────
+    name          = request.POST.get('name', suggestion.suggested_name).strip()
+    req_type      = request.POST.get('req_type', suggestion.suggested_type or 'text').strip()
+    operator      = request.POST.get('operator', suggestion.eligibility_operator).strip()
+    value         = request.POST.get('value', suggestion.eligibility_value).strip()
+    fail_message  = request.POST.get('fail_message', '').strip()
+    link_to_id    = request.POST.get('link_to_requirement', '').strip()
+    form_code     = request.POST.get('form_code', '').strip()
+
+    if not name:
+        return JsonResponse({'ok': False, 'error': 'Name is required.'}, status=400)
+
+    created_req  = None
+    linked_cat_req = None
+
+    # ── FORM type: create GovernmentForm + CategoryForm ───────
+    if suggestion.suggestion_type == 'form':
+        code = form_code or name[:30].upper().replace(' ', '')
+        gov_form, _ = GovernmentForm.objects.get_or_create(
+            code     = code,
+            defaults = {
+                'name':       name,
+                'source_url': suggestion.suggested_url,
+            },
+        )
+        # Link to category
+        CategoryForm.objects.get_or_create(
+            category = suggestion.category,
+            form     = gov_form,
+        )
+
+    else:
+        # ── REQUIREMENT or ELIGIBILITY type ───────────────────
+        is_eligibility = (suggestion.suggestion_type == 'eligibility')
+
+        if link_to_id:
+            # Admin chose to link this to an existing requirement
+            try:
+                req = Requirement.objects.get(id=int(link_to_id))
+            except (Requirement.DoesNotExist, ValueError):
+                return JsonResponse({'ok': False, 'error': 'Requirement not found.'}, status=400)
+        else:
+            # Create a new Requirement in the library.
+            # WHY use the "Other" section as default: new crawler-created requirements
+            # haven't been manually categorized yet. Admin can move them to the right
+            # section afterwards in the library panel.
+            default_section = (
+                RequirementSection.objects.filter(name='Other').first()
+                or RequirementSection.objects.order_by('order').first()
+            )
+            req = Requirement.objects.create(
+                name               = name,
+                type               = req_type,
+                section            = default_section,
+                is_eligibility     = is_eligibility,
+                eligibility_operator = operator if is_eligibility else '',
+                eligibility_value    = value    if is_eligibility else '',
+                eligibility_fail_message = fail_message if is_eligibility else '',
+                is_required        = True,
+            )
+            created_req = req
+
+        # Link requirement to the category (as a CategoryRequirement bridge row)
+        linked_cat_req, _ = CategoryRequirement.objects.get_or_create(
+            category    = suggestion.category,
+            requirement = req,
+        )
+
+    # ── Mark suggestion as accepted ───────────────────────────
+    suggestion.status             = 'accepted'
+    suggestion.reviewed_at        = timezone.now()
+    suggestion.reviewed_by        = admin_prof
+    suggestion.created_requirement = created_req
+    suggestion.save()
+
+    return JsonResponse({
+        'ok':          True,
+        'suggestion_id': suggestion.id,
+        'created_new': created_req is not None,
+        'req_id':      created_req.id if created_req else (linked_cat_req.requirement_id if linked_cat_req else None),
+    })
+
+
+# ── 4. Reject a suggestion ─────────────────────────────────────
+@admin_permission_required('can_manage_content')
+def reject_suggestion(request, suggestion_id):
+    """
+    POST /admin-panel/crawler/suggestions/<suggestion_id>/reject/
+
+    Marks a suggestion as rejected. The suggestion is kept in the DB for audit trail
+    (so admin can see what the crawler found and why it was rejected).
+    No library items are created.
+
+    Returns JSON for AJAX button handling.
+    """
+    from django.utils import timezone
+
+    if request.method != 'POST':
+        return JsonResponse({'ok': False, 'error': 'POST required.'}, status=405)
+
+    suggestion = get_object_or_404(CrawlerSuggestion, id=suggestion_id, status='pending')
+    admin_prof = getattr(request.user, 'admin_profile', None)
+
+    suggestion.status      = 'rejected'
+    suggestion.reviewed_at = timezone.now()
+    suggestion.reviewed_by = admin_prof
+    suggestion.save(update_fields=['status', 'reviewed_at', 'reviewed_by'])
+
+    return JsonResponse({'ok': True, 'suggestion_id': suggestion.id})

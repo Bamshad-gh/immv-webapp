@@ -1,0 +1,473 @@
+<!-- ============================================================
+FILE: admin_panel/templates/admin_panel/crawler_review.html
+
+Crawler Review Queue — shows all pending CrawlerSuggestion rows.
+Admin accepts (creates library item) or rejects (discards) each one.
+
+Context from crawler_review view:
+  pending_by_category: dict {Category: [CrawlerSuggestion, ...]}
+  pending_count:        int
+  accepted_count:       int
+  rejected_count:       int
+  filter_type:          str ('' / 'requirement' / 'eligibility' / 'form')
+  type_choices:         list of (value, label) tuples for filter dropdown
+
+EXPAND: add bulk accept/reject with checkboxes.
+EXPAND: add search/filter by confidence score threshold.
+============================================================ -->
+{% extends "admin_panel/base_admin.html" %}
+{% block title %}Crawler Review{% endblock %}
+{% block topbar_title %}Crawler Review Queue{% endblock %}
+
+{% block extra_css %}
+<style>
+  /* ── Page layout ─────────────────────────────────────────── */
+  .review-wrap { max-width: 900px; }
+
+  /* ── Stats bar ───────────────────────────────────────────── */
+  .stats-bar {
+    display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem;
+  }
+  .stat-chip {
+    padding: .35rem .8rem;
+    border-radius: 99px;
+    font-size: .82rem;
+    font-weight: 600;
+  }
+  .chip-pending   { background: #fef9c3; color: #92400e; }
+  .chip-accepted  { background: #dcfce7; color: #166534; }
+  .chip-rejected  { background: #fee2e2; color: #991b1b; }
+
+  /* ── Filter bar ──────────────────────────────────────────── */
+  .filter-bar {
+    display: flex; align-items: center; gap: .75rem; margin-bottom: 1.25rem;
+  }
+  .filter-bar label { font-size: .85rem; font-weight: 600; color: var(--slate); }
+
+  /* ── Category group ──────────────────────────────────────── */
+  .cat-group-header {
+    font-weight: 700; font-size: .95rem;
+    margin: 1.5rem 0 .5rem;
+    padding-bottom: .4rem;
+    border-bottom: 2px solid var(--border);
+    display: flex; align-items: center; gap: .75rem;
+  }
+  .cat-url-badge {
+    font-size: .75rem; font-weight: 400; color: var(--slate);
+    background: #f1f5f9; padding: .1rem .5rem; border-radius: 4px;
+    text-decoration: none; max-width: 300px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; display: inline-block;
+  }
+  .cat-url-badge:hover { color: var(--amber); }
+
+  /* ── Suggestion card ─────────────────────────────────────── */
+  .suggestion-card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: .65rem;
+    border-left: 4px solid #cbd5e0;   /* overridden by type color below */
+  }
+  /* Left border color by type */
+  .suggestion-card.type-requirement { border-left-color: #6366f1; }
+  .suggestion-card.type-eligibility { border-left-color: #f59e0b; }
+  .suggestion-card.type-form        { border-left-color: #22c55e; }
+
+  .suggestion-header {
+    display: flex; align-items: flex-start; gap: .75rem; margin-bottom: .6rem;
+  }
+  .type-badge {
+    font-size: .72rem; font-weight: 700; padding: .15rem .5rem;
+    border-radius: 4px; white-space: nowrap; flex-shrink: 0; margin-top: 2px;
+  }
+  .badge-requirement { background: #ede9fe; color: #4338ca; }
+  .badge-eligibility { background: #fef9c3; color: #92400e; }
+  .badge-form        { background: #dcfce7; color: #166534; }
+
+  .suggestion-raw-text {
+    font-size: .78rem; color: #94a3b8; font-style: italic;
+    word-break: break-all; margin-bottom: .4rem;
+  }
+
+  /* NLP match row */
+  .match-row {
+    font-size: .82rem; color: var(--slate);
+    display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem;
+  }
+  .conf-bar {
+    width: 80px; height: 5px; background: #e2e8f0;
+    border-radius: 99px; overflow: hidden;
+  }
+  .conf-bar-fill { height: 100%; border-radius: 99px; }
+
+  /* Edit fields — shown when admin wants to override NLP values */
+  .edit-fields {
+    display: none;   /* toggles via JS */
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: .75rem 1rem;
+    margin-top: .5rem;
+    font-size: .85rem;
+  }
+  .edit-fields .form-row {
+    display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: .5rem;
+    align-items: center;
+  }
+  .edit-fields label { font-weight: 600; color: var(--slate); min-width: 90px; }
+  .edit-fields input,
+  .edit-fields select { border: 1px solid var(--border); border-radius: 5px;
+                        padding: .3rem .6rem; font-size: .85rem; flex: 1; }
+
+  /* Action buttons */
+  .action-bar {
+    display: flex; gap: .5rem; align-items: center; margin-top: .75rem;
+    flex-wrap: wrap;
+  }
+  .btn-accept { background: #166534; color: #fff; }
+  .btn-accept:hover { background: #15803d; }
+  .btn-reject { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e0; }
+  .btn-reject:hover { background: #e2e8f0; }
+  .btn-edit   { background: transparent; color: var(--amber); border: none;
+                font-size: .82rem; cursor: pointer; text-decoration: underline; }
+
+  /* Fades out a card after AJAX accept/reject */
+  .suggestion-card.removing {
+    opacity: .3; pointer-events: none; transition: opacity .3s;
+  }
+
+  /* ── Empty state ─────────────────────────────────────────── */
+  .empty-queue {
+    text-align: center; color: var(--slate); padding: 3rem 2rem;
+    background: var(--white); border: 1px solid var(--border); border-radius: 8px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Crawler Review Queue</h1>
+  <p class="page-subtitle" style="color:var(--slate); font-size:.9rem; margin-top:.25rem;">
+    Review items found by the crawler. Accept to add to library; Reject to discard.
+  </p>
+</div>
+
+<div class="review-wrap">
+
+  <!-- ── Stats bar ─────────────────────────────────────────── -->
+  <div class="stats-bar">
+    <span class="stat-chip chip-pending">{{ pending_count }} pending</span>
+    <span class="stat-chip chip-accepted">{{ accepted_count }} accepted</span>
+    <span class="stat-chip chip-rejected">{{ rejected_count }} rejected</span>
+  </div>
+
+  <!-- ── Filter bar ─────────────────────────────────────────── -->
+  <div class="filter-bar">
+    <label>Filter:</label>
+    {% for value, label in type_choices %}
+    <a href="?type={{ value }}"
+       class="btn {% if filter_type == value %}btn-primary{% else %}btn-outline{% endif %}"
+       style="font-size:.8rem; padding:.3rem .75rem;">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- ── Pending suggestions ───────────────────────────────── -->
+  {% if pending_by_category %}
+
+    {% for category, suggestions in pending_by_category.items %}
+    <div class="cat-group-header">
+      {{ category.name }}
+      {% if category.source_url %}
+      <a href="{{ category.source_url }}" target="_blank" class="cat-url-badge">
+        {{ category.source_url }}
+      </a>
+      {% endif %}
+    </div>
+
+    {% for s in suggestions %}
+    <!-- suggestion-card: id used by JS to remove after accept/reject -->
+    <div class="suggestion-card type-{{ s.suggestion_type }}" id="suggestion-{{ s.id }}">
+
+      <!-- Header: type badge + suggested name -->
+      <div class="suggestion-header">
+        <span class="type-badge badge-{{ s.suggestion_type }}">
+          {{ s.get_suggestion_type_display }}
+        </span>
+        <strong style="flex:1;">{{ s.suggested_name|default:"(no name)" }}</strong>
+      </div>
+
+      <!-- Raw text from the crawler (collapsed — click "show raw") -->
+      <details style="font-size:.8rem; color:#94a3b8; margin-bottom:.4rem;">
+        <summary style="cursor:pointer;">Raw text from crawler</summary>
+        <div class="suggestion-raw-text">{{ s.raw_text }}</div>
+      </details>
+
+      <!-- NLP match row -->
+      {% if s.matched_requirement %}
+      <div class="match-row">
+        <span>Best match:</span>
+        <strong>{{ s.matched_requirement.name }}</strong>
+        <!-- Confidence bar -->
+        <div class="conf-bar">
+          <div class="conf-bar-fill"
+               style="width:{{ s.match_confidence|floatformat:0 }}%;
+                      background: {% if s.match_confidence >= 0.75 %}#22c55e{% elif s.match_confidence >= 0.5 %}#f59e0b{% else %}#ef4444{% endif %};">
+          </div>
+        </div>
+        <span>{{ s.match_confidence|floatformat:0 }}% confidence</span>
+      </div>
+      {% endif %}
+
+      <!-- Eligibility condition preview -->
+      {% if s.suggestion_type == 'eligibility' and s.eligibility_operator %}
+      <div style="font-size:.82rem; color:var(--slate); margin-bottom:.4rem;">
+        Condition: <strong>{{ s.eligibility_operator }}</strong> {{ s.eligibility_value }}
+      </div>
+      {% endif %}
+
+      <!-- Form URL preview -->
+      {% if s.suggestion_type == 'form' and s.suggested_url %}
+      <div style="font-size:.82rem; color:var(--slate); margin-bottom:.4rem;">
+        URL: <a href="{{ s.suggested_url }}" target="_blank"
+                style="color:var(--amber);">{{ s.suggested_url|truncatechars:80 }}</a>
+      </div>
+      {% endif %}
+
+      <!-- ── Edit fields (hidden until "Edit" is clicked) ────
+           Allows admin to override the NLP suggestions before accepting.
+           WHY hidden by default: most suggestions only need a quick accept/reject.
+           Showing all fields by default would be overwhelming.
+      ─────────────────────────────────────────────────────── -->
+      <div class="edit-fields" id="edit-{{ s.id }}">
+
+        {% if s.suggestion_type != 'form' %}
+        <div class="form-row">
+          <label>Name</label>
+          <input type="text" id="name-{{ s.id }}"
+                 value="{{ s.suggested_name|default:'' }}" placeholder="Requirement name">
+        </div>
+        <div class="form-row">
+          <label>Type</label>
+          <select id="type-{{ s.id }}">
+            <option value="text"      {% if s.suggested_type == 'text' %}selected{% endif %}>Text</option>
+            <option value="date"      {% if s.suggested_type == 'date' %}selected{% endif %}>Date</option>
+            <option value="boolean"   {% if s.suggested_type == 'boolean' %}selected{% endif %}>Yes/No</option>
+            <option value="select"    {% if s.suggested_type == 'select' %}selected{% endif %}>Select</option>
+            <option value="file"      {% if s.suggested_type == 'file' %}selected{% endif %}>File Upload</option>
+            <option value="info_text" {% if s.suggested_type == 'info_text' %}selected{% endif %}>Info Text</option>
+          </select>
+        </div>
+        {% endif %}
+
+        {% if s.suggestion_type == 'eligibility' %}
+        <div class="form-row">
+          <label>Operator</label>
+          <select id="operator-{{ s.id }}">
+            <option value=""    {% if not s.eligibility_operator %}selected{% endif %}>-- select --</option>
+            <option value="gte" {% if s.eligibility_operator == 'gte' %}selected{% endif %}>≥ (gte)</option>
+            <option value="lte" {% if s.eligibility_operator == 'lte' %}selected{% endif %}>≤ (lte)</option>
+            <option value="eq"  {% if s.eligibility_operator == 'eq' %}selected{% endif %}>= (eq)</option>
+            <option value="neq" {% if s.eligibility_operator == 'neq' %}selected{% endif %}>≠ (neq)</option>
+            <option value="contains" {% if s.eligibility_operator == 'contains' %}selected{% endif %}>contains</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Value</label>
+          <input type="text" id="value-{{ s.id }}"
+                 value="{{ s.eligibility_value|default:'' }}" placeholder="Threshold value">
+        </div>
+        <div class="form-row">
+          <label>Fail msg</label>
+          <input type="text" id="fail-{{ s.id }}"
+                 value="" placeholder="Message shown when condition fails (optional)">
+        </div>
+        {% endif %}
+
+        {% if s.suggestion_type == 'form' %}
+        <div class="form-row">
+          <label>Form code</label>
+          <input type="text" id="form_code-{{ s.id }}"
+                 value="{{ s.suggested_name|default:'' }}" placeholder="e.g. IMM5710">
+        </div>
+        {% endif %}
+
+        <!-- Link to existing requirement instead of creating new one -->
+        {% if s.matched_requirement and s.suggestion_type != 'form' %}
+        <div class="form-row" style="font-size:.8rem; color:var(--slate); margin-top:.25rem;">
+          <span>Link to existing req:</span>
+          <input type="checkbox" id="link-existing-{{ s.id }}" value="{{ s.matched_requirement.id }}">
+          <label for="link-existing-{{ s.id }}" style="font-weight:400; min-width:unset;">
+            {{ s.matched_requirement.name }} ({{ s.match_confidence|floatformat:0 }}% match)
+          </label>
+        </div>
+        {% endif %}
+
+      </div><!-- /edit-fields -->
+
+      <!-- ── Action buttons ──────────────────────────────────── -->
+      <div class="action-bar">
+        <button class="btn btn-accept"
+                onclick="acceptSuggestion({{ s.id }}, this)">
+          Accept
+        </button>
+        <button class="btn btn-reject"
+                onclick="rejectSuggestion({{ s.id }}, this)">
+          Reject
+        </button>
+        <button class="btn-edit" onclick="toggleEdit({{ s.id }})">Edit values</button>
+      </div>
+
+    </div><!-- /suggestion-card -->
+    {% endfor %}
+    {% endfor %}
+
+  {% else %}
+  <!-- ── Empty queue ─────────────────────────────────────────── -->
+  <div class="empty-queue">
+    {% if filter_type %}
+    <p>No pending {{ filter_type }} suggestions.</p>
+    <p style="margin-top:.5rem;"><a href="?type=" style="color:var(--amber);">Clear filter</a></p>
+    {% else %}
+    <p style="margin-bottom:.75rem; font-size:1.05rem;">Review queue is empty.</p>
+    <p style="font-size:.9rem; color:#94a3b8;">
+      Set a <strong>Source URL</strong> on a category in the
+      <a href="{% url 'admin_panel:service_builder' %}" style="color:var(--amber);">Service Builder</a>
+      and click <strong>Crawl Now</strong> to populate the queue.
+    </p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div><!-- /review-wrap -->
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // ── CSRF token ────────────────────────────────────────────
+  // Needed for all POST requests from JS.
+  // WHY read from cookie: Django sets csrftoken cookie automatically.
+  function getCsrfToken() {
+    var name   = 'csrftoken';
+    var cookie = document.cookie.split(';').find(function(c) {
+      return c.trim().startsWith(name + '=');
+    });
+    return cookie ? decodeURIComponent(cookie.split('=')[1]) : '';
+  }
+
+  // ── toggleEdit ───────────────────────────────────────────
+  // Show/hide the edit fields for a suggestion card.
+  function toggleEdit(suggestionId) {
+    var el = document.getElementById('edit-' + suggestionId);
+    el.style.display = el.style.display === 'none' || el.style.display === '' ? 'block' : 'none';
+  }
+
+  // ── acceptSuggestion ─────────────────────────────────────
+  // POST to the accept endpoint with any edited field values.
+  // On success: fade out and remove the card from the DOM.
+  function acceptSuggestion(suggestionId, btn) {
+    var card = document.getElementById('suggestion-' + suggestionId);
+
+    // Collect POST data — read edited values if the edit panel is open
+    var data = new URLSearchParams();
+    data.append('csrfmiddlewaretoken', getCsrfToken());
+
+    // Optional edit fields — read by ID if present
+    var nameEl     = document.getElementById('name-'        + suggestionId);
+    var typeEl     = document.getElementById('type-'        + suggestionId);
+    var opEl       = document.getElementById('operator-'    + suggestionId);
+    var valueEl    = document.getElementById('value-'       + suggestionId);
+    var failEl     = document.getElementById('fail-'        + suggestionId);
+    var codeEl     = document.getElementById('form_code-'   + suggestionId);
+    var linkEl     = document.getElementById('link-existing-' + suggestionId);
+
+    if (nameEl)   data.append('name',          nameEl.value.trim());
+    if (typeEl)   data.append('req_type',       typeEl.value);
+    if (opEl)     data.append('operator',       opEl.value);
+    if (valueEl)  data.append('value',          valueEl.value.trim());
+    if (failEl)   data.append('fail_message',   failEl.value.trim());
+    if (codeEl)   data.append('form_code',      codeEl.value.trim());
+    if (linkEl && linkEl.checked) data.append('link_to_requirement', linkEl.value);
+
+    // Disable buttons during request
+    card.classList.add('removing');
+    btn.disabled = true;
+
+    var url = "{% url 'admin_panel:accept_suggestion' suggestion_id=0 %}".replace('/0/', '/' + suggestionId + '/');
+
+    fetch(url, { method: 'POST', body: data })
+      .then(function(r) { return r.json(); })
+      .then(function(resp) {
+        if (resp.ok) {
+          // Animate removal
+          card.style.transition = 'all .3s';
+          card.style.opacity    = '0';
+          card.style.height     = card.offsetHeight + 'px';
+          setTimeout(function() {
+            card.style.height   = '0';
+            card.style.padding  = '0';
+            card.style.margin   = '0';
+            card.style.overflow = 'hidden';
+            setTimeout(function() { card.remove(); }, 300);
+          }, 200);
+          // Update pending count badge
+          _decrementPending();
+        } else {
+          card.classList.remove('removing');
+          btn.disabled = false;
+          alert('Error: ' + (resp.error || 'Could not accept suggestion.'));
+        }
+      })
+      .catch(function() {
+        card.classList.remove('removing');
+        btn.disabled = false;
+        alert('Network error. Please try again.');
+      });
+  }
+
+  // ── rejectSuggestion ─────────────────────────────────────
+  // POST to the reject endpoint. On success: fade out and remove.
+  function rejectSuggestion(suggestionId, btn) {
+    var card = document.getElementById('suggestion-' + suggestionId);
+    card.classList.add('removing');
+    btn.disabled = true;
+
+    var url = "{% url 'admin_panel:reject_suggestion' suggestion_id=0 %}".replace('/0/', '/' + suggestionId + '/');
+    var data = new URLSearchParams();
+    data.append('csrfmiddlewaretoken', getCsrfToken());
+
+    fetch(url, { method: 'POST', body: data })
+      .then(function(r) { return r.json(); })
+      .then(function(resp) {
+        if (resp.ok) {
+          card.style.opacity = '0';
+          card.style.transition = 'opacity .3s';
+          setTimeout(function() { card.remove(); }, 300);
+          _decrementPending();
+        } else {
+          card.classList.remove('removing');
+          btn.disabled = false;
+          alert('Error: ' + (resp.error || 'Could not reject suggestion.'));
+        }
+      })
+      .catch(function() {
+        card.classList.remove('removing');
+        btn.disabled = false;
+      });
+  }
+
+  // ── _decrementPending ─────────────────────────────────────
+  // Updates the pending count chip in the stats bar.
+  function _decrementPending() {
+    var chip = document.querySelector('.chip-pending');
+    if (!chip) return;
+    var m = chip.textContent.match(/(\d+)/);
+    if (m) {
+      var n = Math.max(0, parseInt(m[1]) - 1);
+      chip.textContent = n + ' pending';
+    }
+  }
+</script>
+{% endblock %}

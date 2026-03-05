@@ -148,6 +148,11 @@ urlpatterns = [
          views.ajax_edit_category,
          name='ajax_edit_category'),
 
+    # Save the source_url on a category (used by the Crawler bar in the service builder)
+    path('ajax/builder/category/<int:category_id>/source-url/',
+         views.ajax_set_category_source_url,
+         name='ajax_set_category_source_url'),
+
     path('ajax/builder/requirement/create/',
          views.ajax_create_requirement,
          name='ajax_create_requirement'),
@@ -270,6 +275,14 @@ path('ajax/builder/category/<int:category_id>/delete/',
     path('ajax/builder/import/',
          views.ajax_import_from_url,
          name='ajax_import_from_url'),
+    # PDF upload: extract AcroForm fields from an uploaded fillable PDF
+    path('ajax/builder/form/<int:form_id>/upload-pdf/',
+         views.ajax_upload_form_pdf,
+         name='ajax_upload_form_pdf'),
+    # PDF import: create a Requirement from one extracted field and link it to the form
+    path('ajax/builder/form/<int:form_id>/import-pdf-field/',
+         views.ajax_import_pdf_field_to_form,
+         name='ajax_import_pdf_field_to_form'),
 
     # ── Tasks ─────────────────────────────────────────────────
     path('tasks/',
@@ -332,4 +345,22 @@ path('ajax/builder/category/<int:category_id>/delete/',
     path('users/<int:user_id>/eligibility-quiz/',
          views.eligibility_quiz,
          name='eligibility_quiz'),
+
+    # ── Crawler ────────────────────────────────────────────────
+    # Trigger a crawl on a specific category's source_url (POST only)
+    path('categories/<int:category_id>/crawl/',
+         views.crawl_category_view,
+         name='crawl_category'),
+    # Review queue — list all pending CrawlerSuggestion rows
+    path('crawler/review/',
+         views.crawler_review,
+         name='crawler_review'),
+    # Accept a pending suggestion (POST: creates Requirement/Form in library)
+    path('crawler/suggestions/<int:suggestion_id>/accept/',
+         views.accept_suggestion,
+         name='accept_suggestion'),
+    # Reject a pending suggestion (POST: marks as rejected, kept for audit)
+    path('crawler/suggestions/<int:suggestion_id>/reject/',
+         views.reject_suggestion,
+         name='reject_suggestion'),
 ]

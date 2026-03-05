@@ -104,7 +104,14 @@ def compute_eligibility_score(user, category):
     # EXPAND: include inherited requirements by walking parent chain if needed.
     elig_crs = (
         CategoryRequirement.objects
-        .filter(category=category, requirement__is_eligibility=True, is_active=True)
+        # WHY NOT is_active=True here:
+        # CategoryRequirement has NO is_active field.
+        # is_active lives on Requirement — so we filter via the relation: requirement__is_active=True.
+        .filter(
+            category=category,
+            requirement__is_eligibility=True,
+            requirement__is_active=True,
+        )
         .select_related('requirement')
         .order_by('order', 'requirement__name')
     )
