@@ -283,12 +283,28 @@
 
     <div class="card">
       <div class="card-header">Add Member</div>
-      <form method="POST" action="{% url 'admin_panel:admin_add_member' group.id %}">
+      <form method="POST"
+            action="{% url 'admin_panel:admin_add_member' group.id %}"
+            id="add-member-form">
         {% csrf_token %}
-        <div class="form-group">
-          <label>User Email</label>
-          <input type="email" name="email" placeholder="user@email.com" required>
+
+        {# User search autocomplete — same pattern as create_case.html #}
+        <div class="form-group" style="position:relative;">
+          <label for="member-search-input">User</label>
+          <input type="text"
+                 id="member-search-input"
+                 autocomplete="off"
+                 placeholder="Type name or email to search…"
+                 style="width:100%;">
+          <div id="member-search-results"
+               style="display:none; position:absolute; top:100%; left:0; right:0; z-index:100;
+                      background:#fff; border:1px solid var(--border); border-top:none;
+                      max-height:200px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,.08);">
+          </div>
+          {# Hidden email sent to Django view #}
+          <input type="hidden" name="email" id="id_member_email">
         </div>
+
         <div class="form-group">
           <label>Role <span style="font-weight:400; text-transform:none;">(optional)</span></label>
           <select name="role">
@@ -359,4 +375,74 @@
 
   </div><!-- /right column -->
 </div><!-- /grid -->
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // ── Add-member user autocomplete ─────────────────────────────
+  // Same search-then-select pattern as create_case.html.
+  // Wires the visible search input to /ajax/user-search/ and fills
+  // the hidden 'email' field that the AdminAddMemberForm validates.
+  //
+  // Wrapped in IIFE so variables don't leak to the global scope.
+
+  (function() {
+    var searchInput  = document.getElementById('member-search-input');
+    var resultsBox   = document.getElementById('member-search-results');
+    var hiddenEmail  = document.getElementById('id_member_email');
+    var searchTimer  = null;
+    var searchUrl    = "{% url 'admin_panel:ajax_user_search' %}";
+
+    function showResults(users) {
+      resultsBox.innerHTML = '';
+      if (!users.length) {
+        resultsBox.innerHTML = '<div style="padding:.6rem 1rem; color:#94a3b8; font-size:.875rem;">No users found</div>';
+        resultsBox.style.display = '';
+        return;
+      }
+      users.forEach(function(u) {
+        var item = document.createElement('div');
+        item.style.cssText = 'padding:.55rem 1rem; cursor:pointer; font-size:.875rem; border-bottom:1px solid var(--border);';
+        item.textContent = u.label;
+        item.addEventListener('mousedown', function(e) {
+          // WHY mousedown: fires before blur, which would otherwise hide the dropdown
+          e.preventDefault();
+          searchInput.value        = u.label;
+          hiddenEmail.value        = u.email;
+          resultsBox.style.display = 'none';
+        });
+        item.addEventListener('mouseover', function() { this.style.background = 'var(--cream, #f7f5f0)'; });
+        item.addEventListener('mouseout',  function() { this.style.background = ''; });
+        resultsBox.appendChild(item);
+      });
+      resultsBox.style.display = '';
+    }
+
+    searchInput.addEventListener('input', function() {
+      var q = this.value.trim();
+      hiddenEmail.value = '';      // clear stale selection
+      clearTimeout(searchTimer);
+      if (q.length < 2) { resultsBox.style.display = 'none'; return; }
+      searchTimer = setTimeout(function() {
+        fetch(searchUrl + '?q=' + encodeURIComponent(q))
+          .then(function(r) { return r.json(); })
+          .then(function(data) { showResults(data.users || []); })
+          .catch(function() { resultsBox.style.display = 'none'; });
+      }, 300);
+    });
+
+    searchInput.addEventListener('blur', function() {
+      setTimeout(function() { resultsBox.style.display = 'none'; }, 200);
+    });
+
+    // Prevent submit if no user confirmed from the dropdown
+    document.getElementById('add-member-form').addEventListener('submit', function(e) {
+      if (!hiddenEmail.value.trim()) {
+        e.preventDefault();
+        alert('Please select a user from the search dropdown before adding.');
+        searchInput.focus();
+      }
+    });
+  })();
+</script>
 {% endblock %}

@@ -75,6 +75,17 @@
           style="font-size:0.8rem; padding:0.4rem 0.9rem;">
       {{ case.status }}
     </span>
+    {# Delete case — POST form prevents accidental trigger via link prefetch. #}
+    {# Confirm dialog gives admin a second chance before the soft-delete fires. #}
+    <form method="post"
+          action="{% url 'admin_panel:delete_case' case.id %}"
+          onsubmit="return confirm('Delete Case #{{ case.id }}? It will be removed from all lists.');"
+          style="margin:0;">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-danger" style="font-size:0.85rem;">
+        Delete Case
+      </button>
+    </form>
   </div>
 </div>
 
@@ -365,6 +376,158 @@
           <td style="padding:0.4rem 0;">{{ requirement_rows|length }}</td>
         </tr>
       </table>
+    </div>
+
+    <!-- ── Tasks Card ──────────────────────────────────────────────────── -->
+    <!--
+      WHY here: Case detail was previously isolated — admin couldn't see or
+      create tasks for a case without leaving the page. This card makes the
+      case the hub for all related work.
+      EXPAND: add inline task status update (quick toggle pending→done).
+    -->
+    <div class="card" style="margin-top:1rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center;
+                  margin-bottom:0.75rem;">
+        <h3 style="margin:0; font-size:1rem;">
+          Tasks ({{ linked_tasks|length }})
+        </h3>
+        <!--
+          Link to task_create pre-filled with this case and user.
+          WHY GET params: task_create reads case_id and user_id from query string
+          to pre-populate the form — no extra view needed.
+        -->
+        <a href="{% url 'admin_panel:task_create' %}?case_id={{ case.id }}&user_id={{ case.user.id }}"
+           class="btn btn-sm"
+           style="font-size:0.75rem; padding:0.3rem 0.75rem;">
+          + Create Task
+        </a>
+      </div>
+
+      {% if linked_tasks %}
+        {% for task in linked_tasks %}
+          <div style="display:flex; justify-content:space-between; align-items:center;
+                      padding:0.5rem 0; border-bottom:1px solid var(--border);">
+            <div>
+              <a href="{% url 'admin_panel:task_detail' task.id %}"
+                 style="color:var(--navy); text-decoration:none; font-weight:500;">
+                {{ task.title }}
+              </a>
+              {% if task.assigned_to_user %}
+                <span class="text-muted" style="font-size:0.8rem; margin-left:0.4rem;">
+                  — {{ task.assigned_to_user.get_full_name|default:task.assigned_to_user.email }}
+                </span>
+              {% endif %}
+            </div>
+            <span class="badge
+              {% if task.status == 'completed' %}badge-success
+              {% elif task.status == 'in_progress' %}badge-warning
+              {% else %}badge-neutral{% endif %}">
+              {{ task.get_status_display }}
+            </span>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-muted" style="font-size:0.85rem; margin:0;">
+          No tasks yet.
+        </p>
+      {% endif %}
+    </div>
+
+    <!-- ── Invoices Card ────────────────────────────────────────────────── -->
+    <!--
+      WHY here: Admin can create an invoice directly from a case without
+      navigating away. The "+ Create Invoice" link pre-fills the user email.
+      EXPAND: show total paid vs total due summary line at the bottom.
+    -->
+    <div class="card" style="margin-top:1rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center;
+                  margin-bottom:0.75rem;">
+        <h3 style="margin:0; font-size:1rem;">
+          Invoices ({{ linked_invoices|length }})
+        </h3>
+        <!--
+          Link to invoice_create pre-filled with case_id and user email.
+          WHY case_id: invoice_create uses it to set Invoice.related_case FK.
+          WHY user_email: invoice_create pre-fills the "Assign to user" field.
+        -->
+        <a href="{% url 'admin_panel:invoice_create' %}?case_id={{ case.id }}&user_email={{ case.user.email }}"
+           class="btn btn-sm"
+           style="font-size:0.75rem; padding:0.3rem 0.75rem;">
+          + Create Invoice
+        </a>
+      </div>
+
+      {% if linked_invoices %}
+        {% for inv in linked_invoices %}
+          <div style="display:flex; justify-content:space-between; align-items:center;
+                      padding:0.5rem 0; border-bottom:1px solid var(--border);">
+            <div>
+              <a href="{% url 'admin_panel:invoice_detail' inv.id %}"
+                 style="color:var(--navy); text-decoration:none; font-weight:500;">
+                {{ inv.title }}
+              </a>
+              <span class="text-muted" style="font-size:0.8rem; margin-left:0.4rem;">
+                {{ inv.currency }} {{ inv.amount }}
+              </span>
+            </div>
+            <span class="badge
+              {% if inv.status == 'paid' %}badge-success
+              {% elif inv.status == 'partial' %}badge-warning
+              {% elif inv.status == 'cancelled' %}badge-neutral
+              {% else %}badge-danger{% endif %}">
+              {{ inv.get_status_display }}
+            </span>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-muted" style="font-size:0.85rem; margin:0;">
+          No invoices yet.
+        </p>
+      {% endif %}
+    </div>
+
+    <!-- ── Required Forms Card ──────────────────────────────────────────── -->
+    <!--
+      WHY here: Shows which government forms this category requires so the
+      admin knows what the applicant must fill. PDF download link lets the
+      admin send the correct version to the client without searching.
+      Forms are added via service builder — no create button needed here.
+      EXPAND: link each form to its service_builder detail panel.
+    -->
+    <div class="card" style="margin-top:1rem;">
+      <h3 style="margin:0 0 0.75rem; font-size:1rem;">
+        Required Forms
+      </h3>
+
+      {% if category_forms %}
+        {% for cf in category_forms %}
+          <div style="display:flex; justify-content:space-between; align-items:center;
+                      padding:0.5rem 0; border-bottom:1px solid var(--border);">
+            <div>
+              <span style="font-weight:600; color:var(--amber);">{{ cf.form.code }}</span>
+              <span style="margin-left:0.4rem;">{{ cf.form.name }}</span>
+            </div>
+            {% if cf.form.pdf_file %}
+              <!--
+                WHY open in new tab (_blank): PDF download shouldn't navigate away
+                from the case page — admin is still working on it.
+              -->
+              <a href="{{ cf.form.pdf_file.url }}"
+                 target="_blank"
+                 style="font-size:0.8rem; color:var(--amber); text-decoration:none;"
+                 title="Download {{ cf.form.code }} PDF">
+                Download PDF
+              </a>
+            {% else %}
+              <span class="text-muted" style="font-size:0.8rem;">No PDF uploaded</span>
+            {% endif %}
+          </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-muted" style="font-size:0.85rem; margin:0;">
+          No forms linked to this category.
+        </p>
+      {% endif %}
     </div>
 
   </div>

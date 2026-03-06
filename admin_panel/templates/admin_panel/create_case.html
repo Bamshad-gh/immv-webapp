@@ -13,10 +13,44 @@ EXPAND: add group/managed_profile selection if needed.
 <div class="card" style="max-width:600px;">
   <form method="POST" id="create-case-form">
     {% csrf_token %}
-<div class="form-group">
-  <label>User Email</label>
-  {{ form.user_email }}
+<!-- ── User autocomplete ──────────────────────────────────────
+     Admin types 2+ chars; matching users appear in a dropdown.
+     Selecting one fills the hidden #id_user_email that the form submits.
+
+     WHY a hidden input + visible search box (not just the email input)?
+       We want to show "Ali Karimi — ali@email.com" in the visible field
+       (more useful for finding the right person) while the backend only
+       ever receives the email address.  Keeping them separate means the
+       form submission is always a clean email, regardless of what's
+       displayed in the search box.
+
+     EXPAND: add keyboard navigation (↑/↓ arrow keys + Enter) to the
+             dropdown for power-user access.
+──────────────────────────────────────────────────────────────── -->
+<div class="form-group" style="position:relative;">
+  <label for="user-search-input">User</label>
+
+  {# Visible search input — shows label text for the selected user #}
+  <input type="text"
+         id="user-search-input"
+         autocomplete="off"
+         placeholder="Type name or email to search…"
+         style="width:100%;">
+
+  {# Dropdown results — hidden by default, shown while searching #}
+  <div id="user-search-results"
+       style="display:none; position:absolute; top:100%; left:0; right:0; z-index:100;
+              background:#fff; border:1px solid var(--border); border-top:none;
+              max-height:220px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,.08);">
+  </div>
+
+  {# Hidden field — actually submitted to Django; holds the chosen email #}
+  {# Django form field 'user_email' renders as id_user_email #}
+  <input type="hidden" name="user_email" id="id_user_email">
+
+  {# Show any server-side validation errors from the previous submit #}
   {{ form.user_email.errors }}
+
   <p class="text-muted text-small mt-1">The user must already have an account.</p>
 </div>
 
@@ -112,6 +146,84 @@ EXPAND: add group/managed_profile selection if needed.
 {% endblock %}
 {% block extra_js %}
 <script>
+  // ── User autocomplete ─────────────────────────────────────────
+  // Wires up the visible search box to the AJAX /ajax/user-search/ endpoint.
+  // On selecting a result, fills the hidden #id_user_email input (what Django
+  // validates on submit) and updates the visible input to show the user's name.
+  //
+  // WHY debounce the search: we don't want an AJAX call on every keystroke.
+  // 300 ms is fast enough to feel instant, slow enough to avoid flooding.
+  //
+  // EXPAND: add keyboard navigation (ArrowUp/ArrowDown/Enter) for power users.
+
+  (function() {
+    var searchInput  = document.getElementById('user-search-input');
+    var resultsBox   = document.getElementById('user-search-results');
+    var hiddenEmail  = document.getElementById('id_user_email');
+    var searchTimer  = null;
+    var userSearchUrl = "{% url 'admin_panel:ajax_user_search' %}";
+
+    function showResults(users) {
+      resultsBox.innerHTML = '';
+      if (!users.length) {
+        resultsBox.innerHTML = '<div style="padding:.6rem 1rem; color:#94a3b8; font-size:.875rem;">No users found</div>';
+        resultsBox.style.display = '';
+        return;
+      }
+      users.forEach(function(u) {
+        var item = document.createElement('div');
+        item.style.cssText = 'padding:.55rem 1rem; cursor:pointer; font-size:.875rem; border-bottom:1px solid var(--border);';
+        item.textContent = u.label;
+        item.addEventListener('mousedown', function(e) {
+          // WHY mousedown instead of click:
+          //   The search input's blur fires before click, hiding the dropdown
+          //   before the click can register.  mousedown fires first.
+          e.preventDefault();
+          selectUser(u);
+        });
+        item.addEventListener('mouseover', function() { this.style.background = 'var(--cream, #f7f5f0)'; });
+        item.addEventListener('mouseout',  function() { this.style.background = ''; });
+        resultsBox.appendChild(item);
+      });
+      resultsBox.style.display = '';
+    }
+
+    function selectUser(u) {
+      // Fill the visible input with a human-friendly label
+      searchInput.value   = u.label;
+      // Fill the hidden input with the email that Django validates
+      hiddenEmail.value   = u.email;
+      resultsBox.style.display = 'none';
+      // Trigger eligibility check now that we have both email + possibly category
+      scheduleEligibilityCheck();
+    }
+
+    function clearResults() {
+      resultsBox.style.display = 'none';
+      resultsBox.innerHTML = '';
+    }
+
+    searchInput.addEventListener('input', function() {
+      var q = this.value.trim();
+      // Reset hidden email when admin edits the search box — prevents stale selection
+      hiddenEmail.value = '';
+      clearTimeout(searchTimer);
+      if (q.length < 2) { clearResults(); return; }
+      searchTimer = setTimeout(function() {
+        fetch(userSearchUrl + '?q=' + encodeURIComponent(q))
+          .then(function(r) { return r.json(); })
+          .then(function(data) { showResults(data.users || []); })
+          .catch(function() { clearResults(); });
+      }, 300);
+    });
+
+    // Hide dropdown when focus leaves the search area
+    searchInput.addEventListener('blur', function() {
+      // Small delay — lets mousedown on a result fire first
+      setTimeout(clearResults, 200);
+    });
+  })();
+
   // ── Infinite category chain ────────────────────────────────────
   // Flow: service selected → fetch top-level categories → show dropdown
   //       category selected → set hidden value → fetch children → show next dropdown
@@ -220,10 +332,17 @@ EXPAND: add group/managed_profile selection if needed.
       .catch(() => {});
   });
 
-  // Confirm value on submit — last safety check
-  document.getElementById('create-case-form').addEventListener('submit', function() {
-    const val = document.querySelector('input[name="final_category"]').value;
-    console.log('Submitting with final_category:', val);
+  // Guard on submit: prevent form submission if no user is selected.
+  // WHY: the search box may have text but no confirmed selection (admin typed
+  //      but didn't click a result).  If hiddenEmail is empty the backend will
+  //      show a "no user found" error — we catch it here with a clearer message.
+  document.getElementById('create-case-form').addEventListener('submit', function(e) {
+    var email = document.getElementById('id_user_email').value.trim();
+    if (!email) {
+      e.preventDefault();
+      alert('Please select a user from the search dropdown before submitting.');
+      document.getElementById('user-search-input').focus();
+    }
   });
 
 

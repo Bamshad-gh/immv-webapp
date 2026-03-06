@@ -20,10 +20,30 @@ Context from view:
   <form method="POST">
     {% csrf_token %}
 
+    {#
+      Hidden input: links this invoice to a case when coming from case_detail.
+      WHY hidden: the link is set by the server (via ?case_id= GET param) — the
+      admin doesn't pick it manually. It's submitted with the form so the view
+      can set Invoice.related_case FK.
+      prefill_case_id is empty when creating an invoice from the invoice list.
+    #}
+    {% if prefill_case_id %}
+      <input type="hidden" name="linked_case" value="{{ prefill_case_id }}">
+      <div style="margin-bottom:0.75rem; padding:0.5rem 0.75rem;
+                  background:#f0f9ff; border:1px solid #bae6fd; font-size:0.85rem;">
+        Linked to Case #{{ prefill_case_id }}
+      </div>
+    {% endif %}
+
     <div class="form-group">
       <label>User Email</label>
+      {#
+        WHY two-tier value: on a fresh GET from case_detail, pre-fill with
+        prefill_user_email. On POST re-submission (after validation error),
+        post.user_email takes priority so the admin's last entry is preserved.
+      #}
       <input type="text" name="user_email"
-             value="{{ post.user_email|default:'' }}"
+             value="{{ post.user_email|default:prefill_user_email }}"
              placeholder="user@example.com" required>
       {% if errors.user_email %}
         <p style="color:var(--danger); font-size:0.8rem; margin-top:0.25rem;">

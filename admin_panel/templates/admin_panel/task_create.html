@@ -73,12 +73,19 @@ Context from view:
                autocomplete="off"
                style="margin-bottom:0.4rem;">
 
-        {# Regular (non-staff) users — shown when task type = user #}
+        {#
+          Regular (non-staff) users — shown when task type = user.
+          WHY prefill_user check: when coming from case_detail "Create Task" button,
+          the view passes prefill_user so we can pre-select the case owner.
+          post.assigned_to takes priority on form re-submission after validation errors.
+        #}
         <select name="assigned_to" id="selectUsers" required>
           <option value="">Select user...</option>
           {% for u in regular_users %}
             <option value="{{ u.id }}"
-              {% if post.assigned_to == u.id|stringformat:'s' %}selected{% endif %}>
+              {% if post.assigned_to == u.id|stringformat:'s' %}selected
+              {% elif not post and prefill_user and prefill_user.id == u.id %}selected
+              {% endif %}>
               {{ u.email }}
             </option>
           {% endfor %}
@@ -117,11 +124,18 @@ Context from view:
           Link to Case
           <span style="font-weight:400; text-transform:none;">(optional)</span>
         </label>
+        {#
+          WHY prefill_case check: when coming from case_detail "Create Task",
+          the view passes prefill_case so we pre-select it in the dropdown.
+          post.linked_case takes priority on form re-submission after errors.
+        #}
         <select name="linked_case">
           <option value="">No case link</option>
           {% for case in all_cases %}
             <option value="{{ case.id }}"
-              {% if post.linked_case == case.id|stringformat:'s' %}selected{% endif %}>
+              {% if post.linked_case == case.id|stringformat:'s' %}selected
+              {% elif not post and prefill_case and prefill_case.id == case.id %}selected
+              {% endif %}>
               Case #{{ case.id }} — {{ case.user.email }} — {{ case.category.name }}
             </option>
           {% endfor %}

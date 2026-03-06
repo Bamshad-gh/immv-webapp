@@ -58,10 +58,19 @@ FILE: admin_panel/templates/admin_panel/case_list.html
               <td class="text-muted">{{ case.get_owner_display }}</td>
               <td><span class="badge badge-{{ case.status }}">{{ case.status }}</span></td>
               <td class="text-muted">{{ case.created_at|date:"M d, Y" }}</td>
-              <td class="text-right">
+              <td class="text-right" style="display:flex; gap:0.5rem; justify-content:flex-end;">
                 <a href="{% url 'admin_panel:case_detail' case.id %}" class="btn btn-sm btn-outline">
                   View
                 </a>
+                {# Delete — POST form so accidental GET (link prefetch) can't trigger it. #}
+                {# onsubmit confirmation prevents mis-clicks. #}
+                <form method="post"
+                      action="{% url 'admin_panel:delete_case' case.id %}"
+                      onsubmit="return confirm('Delete case #{{ case.id }}? This cannot be undone.');"
+                      style="margin:0;">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                </form>
               </td>
             </tr>
           {% endfor %}

@@ -32,7 +32,8 @@ urlpatterns = [
     # ── Cases ─────────────────────────────────────────────────
     path('cases/',                views.case_list,   name='case_list'),
     path('cases/create/',         views.create_case, name='create_case'),
-    path('cases/<int:case_id>/',  views.case_detail, name='case_detail'),
+    path('cases/<int:case_id>/',         views.case_detail, name='case_detail'),
+    path('cases/<int:case_id>/delete/',  views.delete_case, name='delete_case'),
 
     # ── Case requirement management (POST only, no templates) ─
     # toggle = soft delete or restore a requirement for a specific case
@@ -111,6 +112,8 @@ urlpatterns = [
     # ── AJAX (called by JavaScript, not visited directly) ─────
     path('ajax/categories/',    views.get_categories,    name='get_categories'),
     path('ajax/subcategories/', views.get_subcategories, name='get_subcategories'),
+    # User search autocomplete — used by CreateCaseForm + AdminAddMemberForm
+    path('ajax/user-search/',   views.ajax_user_search,  name='ajax_user_search'),
     
     
         # ── Service Builder ───────────────────────────────────────

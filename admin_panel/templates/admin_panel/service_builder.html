@@ -847,6 +847,19 @@
                id="new-req-mapping"
                placeholder="Profile mapping (e.g. profile.first_name) — Phase 2">
 
+        <!--
+          managed_profile_mapping: dot-path to a ManagedProfile field for Phase 3 auto-fill.
+          WHY separate from profile_mapping: profile_mapping fills from the account holder
+          (the person who logged in), whereas managed_profile_mapping fills from the
+          "interior person" the case is FOR (e.g. the applicant themselves).
+          Example: "first_name" → auto-fills from managed_profile.first_name.
+          EXPAND (Phase 3): implement in cases/forms.py _try_managed_profile_fill().
+        -->
+        <input type="text"
+               id="new-req-mp-mapping"
+               placeholder="Interior person auto-fill (e.g. first_name) — Phase 3"
+               title="Phase 3: auto-fills from the interior person's own record, not the account holder's profile.">
+
         <label style="display:flex; align-items:center; gap:0.4rem;
                        font-size:0.8rem; margin-bottom:0.5rem; cursor:pointer;">
           <input type="checkbox" id="new-req-required" checked style="width:auto; margin:0;">
@@ -869,35 +882,101 @@
 
         <!-- Eligibility fields — hidden until the toggle above is clicked -->
         <div id="new-elig-fields" class="eligibility-fields" style="display:none;">
+
+          <!--
+            WHAT IS AN ELIGIBILITY GATE?
+            ─────────────────────────────
+            An eligibility gate is a requirement that determines whether the
+            applicant QUALIFIES for this service at all — it's a pass/fail check,
+            not a data-collection field.
+
+            Example: "Must be at least 18 years old"
+              • Requirement type: number (you ask for their age)
+              • Operator: gte (≥)
+              • Value: 18
+              • Fail message: "You must be at least 18 to apply."
+
+            If the user's answer fails the condition, the system shows the
+            fail message and marks the case as "not eligible".
+
+            HOW OPERATORS WORK:
+              gte / lte       — for numbers and ages (≥ 18, ≤ 65)
+              equals          — for exact text match ("Canadian citizen")
+              not_equals      — must NOT be a certain value
+              contains        — answer must include specific text
+              yes / no        — for boolean (yes/no) questions only
+              on_or_after_date / on_or_before_date
+                              — for date fields (passport not expired, etc.)
+
+            THRESHOLD VALUE EXAMPLES:
+              Age minimum:      operator=gte,  value=18
+              Boolean yes only: operator=yes   (no value needed)
+              Date not expired: operator=on_or_after_date,  value=today  (or a fixed date)
+              Province match:   operator=equals, value=Ontario
+          -->
+          <div style="background:#f8f6f0; border:1px solid var(--border);
+                      padding:0.6rem 0.75rem; margin-bottom:0.75rem;
+                      font-size:0.78rem; color:var(--slate); line-height:1.6;">
+            <strong style="color:var(--navy); display:block; margin-bottom:0.3rem;">
+              How eligibility gates work
+            </strong>
+            An eligibility gate checks whether the user's answer meets a condition.
+            If it fails, the applicant is shown the fail message and blocked from
+            proceeding. Choose an operator, enter the threshold, and write a clear
+            fail message.
+            <br>
+            <span style="color:var(--amber);">Example:</span>
+            type&nbsp;=&nbsp;number &nbsp;·&nbsp; operator&nbsp;=&nbsp;gte &nbsp;·&nbsp; value&nbsp;=&nbsp;18
+            &nbsp;→&nbsp; "Must be at least 18 years old."
+          </div>
+
           <label style="font-size:0.75rem; font-weight:600; display:block; margin-bottom:0.15rem;">
             Operator
           </label>
           <select id="new-req-elig-op">
             <option value="">— choose operator —</option>
-            <option value="on_or_before_date">On or before date</option>
-            <option value="before_date">Strictly before date</option>
-            <option value="on_or_after_date">On or after date</option>
-            <option value="after_date">Strictly after date</option>
-            <option value="equals">Equals</option>
-            <option value="not_equals">Does not equal</option>
-            <option value="yes">Answer is Yes</option>
-            <option value="no">Answer is No</option>
-            <option value="contains">Contains text</option>
+            <optgroup label="Numbers &amp; Ages">
+              <option value="gte">&#8805; at least (gte) — e.g. age ≥ 18</option>
+              <option value="lte">&#8804; at most (lte) — e.g. years ≤ 5</option>
+            </optgroup>
+            <optgroup label="Text &amp; Categories">
+              <option value="equals">= exactly equals — e.g. status = "citizen"</option>
+              <option value="not_equals">&#8800; does not equal — e.g. not "refused"</option>
+              <option value="contains">contains text — e.g. answer includes "Ontario"</option>
+            </optgroup>
+            <optgroup label="Yes / No Questions">
+              <option value="yes">Answer is Yes — use with boolean type</option>
+              <option value="no">Answer is No — use with boolean type</option>
+            </optgroup>
+            <optgroup label="Dates">
+              <option value="on_or_after_date">&#8805; on or after date — e.g. passport valid after today</option>
+              <option value="on_or_before_date">&#8804; on or before date — e.g. born before 2006-01-01</option>
+              <option value="after_date">strictly after date</option>
+              <option value="before_date">strictly before date</option>
+            </optgroup>
           </select>
 
-          <label style="font-size:0.75rem; font-weight:600; display:block; margin-bottom:0.15rem;">
+          <label style="font-size:0.75rem; font-weight:600; display:block;
+                        margin-top:0.5rem; margin-bottom:0.15rem;">
             Threshold value
-            <span style="font-weight:400; color:var(--slate);">(e.g. 18, yes, no, 2025-02-28)</span>
+            <span style="font-weight:400; color:var(--slate);">
+              — what the answer is compared against
+            </span>
           </label>
           <input type="text" id="new-req-elig-val"
-                 placeholder="e.g. 18 for age · yes for boolean · 2025-02-28 for date">
+                 placeholder="18 (age) · Ontario (text) · 2006-01-01 (date) · leave blank for yes/no">
+          <p style="font-size:0.72rem; color:var(--slate); margin-top:0.2rem; margin-bottom:0;">
+            Leave blank when using <em>Answer is Yes</em> or <em>Answer is No</em> operators.
+            For dates use YYYY-MM-DD format.
+          </p>
 
-          <label style="font-size:0.75rem; font-weight:600; display:block; margin-bottom:0.15rem;">
+          <label style="font-size:0.75rem; font-weight:600; display:block;
+                        margin-top:0.5rem; margin-bottom:0.15rem;">
             Fail message
             <span style="font-weight:400; color:var(--slate);">(shown to user if they don't qualify)</span>
           </label>
           <input type="text" id="new-req-elig-msg"
-                 placeholder="e.g. You must be at least 18 years old.">
+                 placeholder="e.g. You must be at least 18 years old to apply for this service.">
         </div>
 
         <div class="inline-form-actions">
@@ -965,6 +1044,24 @@
           <button class="btn btn-sm btn-outline"
                   style="font-size:0.7rem; margin-left:0.3rem;"
                   onclick="openPdfPanel()">↑ Upload PDF</button>
+        </div>
+
+        <!--
+          PDF download link — shown only when a PDF has been uploaded for this form.
+          WHY here (not inside form-detail-url): a PDF can be uploaded even when there
+          is no source_url, so this element must be independent of the URL divs.
+          reloadFormDetail() sets the href from data.form.pdf_file_url and
+          toggles display:none / display:block.
+          EXPAND: show upload date using a pdf_uploaded_at field on GovernmentForm.
+        -->
+        <div id="form-detail-pdf" style="margin-top:0.35rem; display:none;">
+          <a id="form-detail-pdf-link"
+             href="#"
+             target="_blank"
+             rel="noopener"
+             style="font-size:0.75rem; color:var(--amber); text-decoration:none;">
+            &#128196; Download saved PDF ↗
+          </a>
         </div>
       </div><!-- /form-detail-header -->
 
@@ -1484,20 +1581,62 @@ function renderRequirements(ownReqs, inherited, categoryName) {
     });
   }
 
-  // ── Section: Requirements ─────────────────────────────────────────────────
+  // ── Section: Requirements (grouped by government form) ───────────────────
+  //
+  // WHY group by form: when a category has linked government forms (e.g. IMM5710),
+  // the admin needs to see which requirements come from which form so they know
+  // where each field maps. Without grouping, it's a flat list with no structure.
+  //
+  // Algorithm:
+  //   1. Build formGroups: { formCode → [reqs in that form] }
+  //   2. directReqs: reqs with no form_codes (custom reqs added by admin)
+  //   3. Render each form group under a "📋 IMM5710 Fields" header
+  //   4. Render directReqs under a "Requirements" header (or no header if no form groups)
   if (normReqs.length) {
-    // Only show the "Requirements" header when there are also eligibility gates above,
-    // to avoid redundant label when there's just one group.
-    if (eligReqs.length) {
+    var formGroups = {};  // { formCode: [req, ...] }
+    var directReqs = [];  // reqs not in any linked government form
+
+    normReqs.forEach(function(r) {
+      if (r.form_codes && r.form_codes.length) {
+        r.form_codes.forEach(function(code) {
+          if (!formGroups[code]) { formGroups[code] = []; }
+          formGroups[code].push(r);
+        });
+      } else {
+        directReqs.push(r);
+      }
+    });
+
+    var formCodeList = Object.keys(formGroups);
+
+    // Render one section per government form
+    formCodeList.forEach(function(code) {
+      // Slate-tinted header — visually distinct from eligibility (amber) header above.
       html += '<div style="padding:0.35rem 0.75rem 0.2rem; background:var(--cream);'
         + 'border-bottom:1px solid var(--border); border-top:2px solid var(--border);">'
         + '<span style="font-size:0.7rem; font-weight:700; text-transform:uppercase;'
-        + 'letter-spacing:0.06em; color:var(--slate);">Requirements</span>'
+        + 'letter-spacing:0.06em; color:var(--slate);">&#128203; ' + escHtml(code) + ' Fields</span>'
         + '</div>';
-    }
-    normReqs.forEach(function(req) {
-      html += _renderReqRow(req);
+      formGroups[code].forEach(function(req) {
+        html += _renderReqRow(req);
+      });
     });
+
+    // Render direct (non-form) requirements
+    if (directReqs.length) {
+      // Only show the "Requirements" header when there are also form groups or eligibility gates above.
+      // This avoids a redundant label when there is just one undifferentiated group.
+      if (eligReqs.length || formCodeList.length) {
+        html += '<div style="padding:0.35rem 0.75rem 0.2rem; background:var(--cream);'
+          + 'border-bottom:1px solid var(--border); border-top:2px solid var(--border);">'
+          + '<span style="font-size:0.7rem; font-weight:700; text-transform:uppercase;'
+          + 'letter-spacing:0.06em; color:var(--slate);">Requirements</span>'
+          + '</div>';
+      }
+      directReqs.forEach(function(req) {
+        html += _renderReqRow(req);
+      });
+    }
   }
 
   if (!ownReqs.length) {
@@ -1560,12 +1699,14 @@ function _renderReqRow(req) {
   var eligSummary = '';
   if (req.is_eligibility && req.eligibility_operator) {
     var opLabel = {
-      'on_or_before_date': '≤ date', 'before_date': '< date',
-      'on_or_after_date': '≥ date',  'after_date':  '> date',
-      'equals': '=', 'not_equals': '≠', 'yes': '= yes', 'no': '= no',
+      'gte': '≥', 'lte': '≤',
+      'equals': '=', 'not_equals': '≠',
       'contains': 'contains',
-      // legacy operator names that may exist in older data
-      'gte': '≥', 'lte': '≤', 'eq': '=', 'neq': '≠',
+      'yes': '= yes', 'no': '= no',
+      'on_or_before_date': '≤ date', 'before_date': '< date',
+      'on_or_after_date':  '≥ date', 'after_date':  '> date',
+      // legacy aliases
+      'eq': '=', 'neq': '≠',
     }[req.eligibility_operator] || req.eligibility_operator;
     var valPart = req.eligibility_value ? (' ' + escHtml(req.eligibility_value)) : '';
     eligSummary = '<span class="type-badge" style="background:rgba(200,130,10,0.1);'
@@ -1680,15 +1821,21 @@ function _renderReqRow(req) {
     + '<label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:0.15rem;">Operator</label>'
     + '<select id="edit-req-elig-op-' + req.id + '">'
     + [
-        ['on_or_before_date', 'On or before date'],
-        ['before_date',       'Strictly before date'],
-        ['on_or_after_date',  'On or after date'],
-        ['after_date',        'Strictly after date'],
-        ['equals',            'Equals'],
-        ['not_equals',        'Does not equal'],
-        ['yes',               'Answer is Yes'],
-        ['no',                'Answer is No'],
-        ['contains',          'Contains text'],
+        // Numbers
+        ['gte',               '\u2265 at least (gte) \u2014 e.g. age \u2265 18'],
+        ['lte',               '\u2264 at most (lte) \u2014 e.g. years \u2264 5'],
+        // Text
+        ['equals',            '= exactly equals \u2014 e.g. status = "citizen"'],
+        ['not_equals',        '\u2260 does not equal'],
+        ['contains',          'contains text'],
+        // Boolean
+        ['yes',               'Answer is Yes (boolean)'],
+        ['no',                'Answer is No (boolean)'],
+        // Dates
+        ['on_or_after_date',  '\u2265 on or after date'],
+        ['on_or_before_date', '\u2264 on or before date'],
+        ['after_date',        'strictly after date'],
+        ['before_date',       'strictly before date'],
       ].map(function(op) {
         return '<option value="' + op[0] + '"'
           + (req.eligibility_operator === op[0] ? ' selected' : '')
@@ -1775,7 +1922,18 @@ function renderLibraryResults(requirements, alreadyLinkedIds) {
       + '<div class="lib-item-meta">'
       + '<span class="type-badge" style="margin-left:0;">' + escHtml(req.type) + '</span>'
       + ' · ' + escHtml(req.section_name)
-      + (req.profile_mapping ? ' · &#8618; ' + escHtml(req.profile_mapping) : '')
+      // profile_mapping: "→ profile.first_name" amber tag — shows account holder auto-fill
+      // WHY show here: admin can see at a glance if the requirement already has auto-fill
+      // wired up so they don't create a duplicate. The arrow symbol (↪) signals auto-fill.
+      + (req.profile_mapping
+          ? ' · <span style="color:var(--amber);font-size:0.75rem;" title="Profile auto-fill">&#8618; '
+            + escHtml(req.profile_mapping) + '</span>'
+          : '')
+      // managed_profile_mapping: "👤 first_name" slate tag — shows interior person auto-fill
+      + (req.managed_profile_mapping
+          ? ' · <span style="color:var(--slate);font-size:0.75rem;" title="Interior person auto-fill">&#128100; '
+            + escHtml(req.managed_profile_mapping) + '</span>'
+          : '')
       + '</div>'
       + '</div>'
       + actionBtn
@@ -2134,7 +2292,10 @@ async function createRequirement() {
   const type        = document.getElementById('new-req-type').value;
   const desc        = document.getElementById('new-req-desc').value.trim();
   const sectionId   = document.getElementById('new-req-section').value || null;
-  const mapping     = document.getElementById('new-req-mapping').value.trim();
+  const mapping    = document.getElementById('new-req-mapping').value.trim();
+  // managed_profile_mapping: the "interior person" Phase 3 auto-fill field.
+  // Separate from profile_mapping — fills from the managed person's own record.
+  const mpMapping  = document.getElementById('new-req-mp-mapping').value.trim();
   const is_required = document.getElementById('new-req-required').checked;
 
   // Phase 4: read eligibility gate fields from the collapsible section.
@@ -2154,8 +2315,9 @@ async function createRequirement() {
     description:             desc,
     is_required:             is_required,
     section_id:              sectionId,
-    category_id:             state.categoryId,   // also link to current category
-    profile_mapping:         mapping,
+    category_id:              state.categoryId,   // also link to current category
+    profile_mapping:          mapping,
+    managed_profile_mapping:  mpMapping,
     // Phase 4: eligibility gate fields — empty if gate section is closed
     is_eligibility:          is_eligibility,
     eligibility_operator:    eligibility_operator,
@@ -2175,7 +2337,8 @@ async function createRequirement() {
   document.getElementById('new-req-name').value    = '';
   document.getElementById('new-req-type').value    = '';
   document.getElementById('new-req-desc').value    = '';
-  document.getElementById('new-req-mapping').value = '';
+  document.getElementById('new-req-mapping').value    = '';
+  document.getElementById('new-req-mp-mapping').value = '';  // clear managed_profile_mapping
   document.getElementById('new-req-required').checked = true;
   // Reset eligibility gate section to closed state
   document.getElementById('new-elig-fields').style.display = 'none';
@@ -2817,6 +2980,19 @@ async function reloadFormDetail() {
   } else {
     urlDiv.style.display   = 'none';
     noUrlDiv.style.display = '';
+  }
+
+  // ── PDF download link ──
+  // WHY a dedicated div (not part of form-detail-url):
+  //   A PDF can be uploaded even when no source_url is set — the two are independent.
+  //   We toggle display:none/block and set the href dynamically after upload.
+  var pdfDiv  = document.getElementById('form-detail-pdf');
+  var pdfLink = document.getElementById('form-detail-pdf-link');
+  if (data.form.pdf_file_url) {
+    pdfLink.href         = data.form.pdf_file_url;
+    pdfDiv.style.display = '';
+  } else {
+    pdfDiv.style.display = 'none';
   }
 
   // ── Tab content ──

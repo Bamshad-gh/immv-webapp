@@ -67,6 +67,10 @@ from cases.models import (
     Case, CaseAnswer, CaseRequirement,
     Category, Service, Requirement,
     RequirementSection, RequirementChoice, CategoryRequirement,   # Phase 1 library models
+    CrawlerSuggestion,                                            # Phase 5 crawler
+    # GovernmentForm, FormRequirement, CategoryForm are imported inline in
+    # the builder views that need them — they share names with Django builtins
+    # and are only needed in a few AJAX functions.
 )
 from django.contrib.auth import get_user_model
 
@@ -74,12 +78,16 @@ import json
 from django.views.decorators.http import require_http_methods
 
 from django.db import transaction
-from django.db.models import Sum, Max
+from django.db.models import Max
 from decimal import Decimal
-from tasks.models import Task, notify_task_assigned
 from payments.models import Invoice, Payment
-from tasks.models import Task, notify_task_assigned, notify_task_completed, notify_invoice_created, notify_payment_recorded
-from django.contrib.auth import get_user_model
+from tasks.models import (
+    Task,
+    notify_task_assigned,
+    notify_task_completed,
+    notify_invoice_created,
+    notify_payment_recorded,
+)
 
 
 
@@ -209,21 +217,27 @@ def admin_view_user(request, user_id):
     personal_cases = Case.objects.filter(
         user=target_user,
         group=None,
-        managed_profile=None
+        managed_profile=None,
+        is_active=True,
     )
 
-    user_group_ids = GroupMembership.objects.filter(
-        user=target_user,
-        is_active=True
-    ).values_list('group_id', flat=True)
-
+    # WHY filter by user=target_user: a case belongs to exactly one user (the
+    # applicant who filed it). Filtering only by group_id would return ALL cases
+    # in any group the user is a member of — showing other members' cases too,
+    # which is confusing and a privacy concern. We only want THIS user's cases
+    # that happen to be assigned to a group.
+    # WHY group__isnull=False: cleaner than querying group memberships — a case
+    # is a "group case" simply because it has a group FK set.
     group_cases = Case.objects.filter(
-        group_id__in=user_group_ids,
-        managed_profile=None
+        user=target_user,
+        group__isnull=False,
+        managed_profile=None,
+        is_active=True,
     )
 
     managed_cases = Case.objects.filter(
-        managed_profile__created_by=target_user
+        managed_profile__created_by=target_user,
+        is_active=True,
     )
 
     # User's groups with their roles
@@ -472,11 +486,37 @@ def case_detail(request, case_id):
         .distinct()
     )
 
+    # ── Pre-fetch tasks, invoices, and required forms for the panels ──
+    # WHY here (not in template tags): Django templates cannot call queryset
+    # methods with arguments — pre-fetching in the view keeps the template clean.
+
+    # Tasks linked to this case (reverse FK: Task.related_case → Case)
+    linked_tasks = (
+        case.tasks
+        .select_related('assigned_to_user')
+        .order_by('-created_at')
+    )
+
+    # Invoices linked to this case (reverse FK: Invoice.related_case → Case)
+    linked_invoices = case.invoices.order_by('-created_at')
+
+    # Government forms required by this category (M2M via CategoryForm bridge)
+    # EXPAND: if category is None (old cases), category_forms will be an empty QS.
+    category_forms = (
+        case.category.category_forms
+        .select_related('form')
+        .order_by('order')
+        if case.category else []
+    )
+
     return render(request, 'admin_panel/case_detail.html', {
         'case':              case,
         'requirement_rows':  requirement_rows,
         'available_to_add':  available_to_add,
         'status_choices':    Case.STATUS_CHOICES,
+        'linked_tasks':      linked_tasks,
+        'linked_invoices':   linked_invoices,
+        'category_forms':    category_forms,
     })
 
 
@@ -488,13 +528,6 @@ def case_detail(request, case_id):
 @admin_permission_required('can_view_all_cases')
 def create_case(request):
     if request.method == 'POST':
-        print("=== RAW POST DATA ===")
-        print(dict(request.POST))  # ← add this
-        form = CreateCaseForm(request.POST)
-        print("=== FORM VALID ===", form.is_valid())
-        print("=== FORM ERRORS ===", form.errors)  # ← add this
-        if form.is_valid():
-            ...
         form = CreateCaseForm(request.POST)
         if form.is_valid():
             case = form.save(created_by=request.user)
@@ -517,10 +550,18 @@ def create_case(request):
                     is_extra    = False,    # from category defaults, not manually added
                 )
 
+            # Pre-fill answers from the user's profile data.
+            # _autofill_case_answers is defined in this file (below _create_case).
+            # WHY call it here too (not only inside _create_case):
+            #   create_case view creates CaseRequirements directly without using
+            #   the _create_case helper, so we must call it explicitly here.
+            filled = _autofill_case_answers(case)
+
             messages.success(
                 request,
                 f'Case created for {form.cleaned_user.email} '
-                f'— {cat_reqs.count()} requirements loaded.'
+                f'— {cat_reqs.count()} requirements loaded'
+                + (f', {filled} answers pre-filled from profile.' if filled else '.')
             )
             return redirect('admin_panel:case_detail', case_id=case.id)
     else:
@@ -531,7 +572,56 @@ def create_case(request):
         'services': Service.objects.filter(is_active=True),
     })
 
-    
+
+# ── 11b. DELETE CASE ──────────────────────────────────────────
+# Soft-delete only — sets is_active=False rather than removing the row.
+# WHY soft delete: preserves the audit trail (answers, requirements, history).
+#   The case disappears from all active queries (which filter is_active=True)
+#   but can be recovered from the DB if needed by a developer.
+# POST only — a GET request could be triggered accidentally (e.g. by a link
+#   prefetcher), so we require an explicit POST to confirm the action.
+
+@admin_permission_required('can_view_all_cases')
+def delete_case(request, case_id):
+    """
+    POST /admin-panel/cases/<case_id>/delete/
+
+    Soft-deletes the case (is_active=False).
+    Redirects to case_list after success.
+
+    EXPAND: add an 'undo' window — store deleted_at timestamp and allow
+            restore within 30 days via a separate restore_case view.
+    """
+    if request.method != 'POST':
+        # Safety net: redirect instead of showing an error page.
+        # WHY: accidental GET (e.g. browser prefetch) should not crash —
+        #      it just lands the admin back on the case detail page.
+        return redirect('admin_panel:case_detail', case_id=case_id)
+
+    # WHY no is_active=True filter: the delete button may still be visible in
+    # cached pages even after the case was already soft-deleted. Requiring
+    # is_active=True would throw a confusing 404 instead of silently succeeding.
+    # We check and skip gracefully if already deleted.
+    case = get_object_or_404(Case, id=case_id)
+
+    if not case.is_active:
+        # Already deleted — just redirect without an error message.
+        messages.info(request, f'Case #{case.id} was already deleted.')
+        return redirect('admin_panel:case_list')
+
+    # Soft-delete: flip the flag.
+    # update_fields limits the UPDATE to one column — no risk of overwriting
+    # other fields if another request touches the row at the same time.
+    case.is_active = False
+    case.save(update_fields=['is_active'])
+
+    messages.success(
+        request,
+        f'Case #{case.id} ({case.category}) has been deleted.'
+    )
+    return redirect('admin_panel:case_list')
+
+
 # ── 12. TOGGLE REQUIREMENT ────────────────────────────────────
 # Flips is_active on a CaseRequirement — soft delete or restore.
 # POST only — no template. Redirects back to case_detail.
@@ -950,7 +1040,111 @@ def _create_case(user, group, category, managed_profile=None):
             is_active   = True,
             is_extra    = False,
         )
+
+    # Pre-fill answers from the user's stored profile data.
+    # WHY here (after all CaseRequirements are created, not in a loop above):
+    #   _autofill_case_answers queries CaseRequirement in a single batch — calling
+    #   it once after the loop is more efficient than checking profile data per row.
+    _autofill_case_answers(case)
+
     return case
+
+
+# ── AUTO-FILL HELPER ──────────────────────────────────────────
+# Called immediately after a case is created (and its CaseRequirements exist).
+# Looks at each requirement's profile_mapping / managed_profile_mapping and writes
+# a CaseAnswer pre-populated from the user's stored profile data.
+#
+# WHY do this at creation time (not on every page load)?
+#   If we pre-fill at load time the user could lose edits when the page reloads.
+#   Creating the answer once at case-creation time means:
+#     - The user sees their info already filled in when they first open the case.
+#     - They can still edit or override the pre-filled answer at any time.
+#     - Admin edits in the case_detail view also see the pre-filled value.
+#
+# WHY only create (not update) existing answers?
+#   We use get_or_create so that calling this on an already-populated case
+#   is idempotent — it won't overwrite answers the user has already edited.
+#
+# EXPAND: add a "Re-sync from profile" button in case_detail so admin can
+#         re-trigger this for cases that existed before profile data was filled in.
+
+def _autofill_case_answers(case):
+    """
+    Pre-populate CaseAnswer rows from the user's Profile or ManagedProfile data.
+
+    For each active CaseRequirement on the case:
+      1. Check if a profile_mapping dot-path is set (e.g. 'profile.date_of_birth')
+      2. Resolve the value by walking the dot-path on case.user
+      3. If a non-None value is found AND no CaseAnswer yet exists → create one
+      4. Repeat with managed_profile_mapping if case.managed_profile is set
+
+    Returns a count of answers that were pre-filled (useful for log messages).
+
+    EXPAND: add support for 'cross_case' fill — copy the most recent answer
+            to the same requirement from any older case for the same user.
+    """
+    from cases.forms import _try_profile_fill, _try_managed_profile_fill
+    import datetime
+
+    filled = 0
+
+    active_reqs = (
+        CaseRequirement.objects
+        .filter(case=case, is_active=True)
+        .select_related('requirement')
+    )
+
+    for cr in active_reqs:
+        req = cr.requirement
+
+        # Skip info_text type — it has no answer field
+        if req.type == 'info_text':  # Requirement.type is the field name (NOT input_type)
+            continue
+
+        # Skip if an answer already exists (idempotent — don't overwrite user edits)
+        if CaseAnswer.objects.filter(case=case, requirement=req).exists():
+            continue
+
+        # ── Resolve value from profile or managed_profile ─────
+        value = None
+
+        if case.managed_profile:
+            # Managed profile takes precedence — this case is for an interior person
+            value = _try_managed_profile_fill(req, case.managed_profile)
+
+        if value is None and case.user:
+            # Fall back to the regular user profile mapping
+            value = _try_profile_fill(req, case.user)
+
+        if value is None:
+            continue    # no mapping set, or the mapped field is empty → skip
+
+        # ── Convert value to the right CaseAnswer field ───────
+        # CaseAnswer has answer_text (str) and answer_date (date).
+        # Determine which field to fill based on the value's type.
+        answer_text = None
+        answer_date = None
+
+        if isinstance(value, datetime.date):
+            # datetime.datetime is a subclass of datetime.date — both work here
+            answer_date = value if isinstance(value, datetime.date) else None
+        else:
+            # Everything else (str, int, bool) goes into answer_text as a string
+            answer_text = str(value)
+
+        if answer_text is None and answer_date is None:
+            continue
+
+        CaseAnswer.objects.create(
+            case        = case,
+            requirement = req,
+            answer_text = answer_text or '',
+            answer_date = answer_date,
+        )
+        filled += 1
+
+    return filled
 
 
 # ── ADMIN: CREATE MANAGED PROFILE ────────────────────────────
@@ -1244,6 +1438,85 @@ def admin_assign_category_to_group(request, group_id):
         'group':         group,
         'member_count':  member_count,
         'managed_count': managed_count,
+    })
+
+
+# ── 15b. AJAX — USER SEARCH ───────────────────────────────────
+# Used by the user-autocomplete widget in CreateCaseForm, AdminAddMemberForm,
+# and any other form where the admin must pick an existing user.
+#
+# WHY AJAX autocomplete instead of a plain email input?
+#   A plain email field forces the admin to remember the exact email address.
+#   Autocomplete lets them type 2–3 characters and see matches by first name,
+#   last name, OR email — much faster and less error-prone.
+#
+# SECURITY NOTE:
+#   Only admins can call this endpoint (@admin_required).
+#   Only non-staff users are searchable — admins and superusers are hidden
+#   from the results to prevent confusion (you don't create cases for admins).
+#   EXPAND: add is_active filter if you later add user deactivation.
+
+@admin_required
+def ajax_user_search(request):
+    """
+    GET /admin-panel/ajax/user-search/?q=ali
+
+    Returns up to 10 users whose email, first_name, or last_name contains
+    the search term (case-insensitive).
+
+    Response:
+      {
+        "users": [
+          {"id": 7, "email": "ali@email.com", "full_name": "Ali Karimi",
+           "label": "Ali Karimi — ali@email.com"},
+          ...
+        ]
+      }
+
+    The 'label' field is designed to be shown directly in a dropdown option —
+    it contains enough info to identify a user at a glance.
+
+    EXPAND: add 'phone' to the label so admins can also search by phone number.
+    EXPAND: order by recently-created cases first (most active clients near top).
+    """
+    q = request.GET.get('q', '').strip()
+
+    if len(q) < 2:
+        # Require at least 2 characters — otherwise we'd return hundreds of rows.
+        # The frontend should enforce this too, but we guard here as well.
+        return JsonResponse({'users': []})
+
+    from django.db.models import Q
+
+    users = (
+        User.objects
+        .filter(is_staff=False, is_superuser=False)   # exclude admin accounts
+        .filter(
+            # Case-insensitive search across three fields simultaneously.
+            # Q objects let us combine multiple field lookups with OR.
+            # icontains = SQL LIKE '%q%', case-insensitive.
+            Q(email__icontains=q)       |
+            Q(first_name__icontains=q)  |
+            Q(last_name__icontains=q)
+        )
+        .order_by('first_name', 'last_name')
+        [:10]  # cap at 10 results — enough to narrow down without being overwhelming
+    )
+
+    return JsonResponse({
+        'users': [
+            {
+                'id':        u.id,
+                'email':     u.email,
+                'full_name': f'{u.first_name} {u.last_name}'.strip() or u.email,
+                # 'label' is the string shown in the dropdown option.
+                # Format: "First Last — email@example.com"
+                'label':     f'{u.first_name} {u.last_name}'.strip() + f' — {u.email}'
+                             if (u.first_name or u.last_name)
+                             else u.email,
+            }
+            for u in users
+        ]
     })
 
 
@@ -1549,6 +1822,35 @@ def ajax_get_category_detail(request, category_id):
         .select_related('requirement', 'requirement__section')
         .order_by('order')
     )
+
+    # ── Build requirement → form-code lookup (for grouping in the UI) ──────
+    # WHY: the service builder shows requirements grouped under the government
+    # form they belong to (e.g. "IMM5710 Fields" section). To do this we need
+    # to know which forms are linked to THIS category AND which of those forms
+    # contain each requirement.
+    #
+    # Step 1: get the IDs of all forms linked to this category via CategoryForm.
+    # Step 2: for each FormRequirement whose form is in that set AND whose
+    #         requirement is in our own_cat_reqs, record the form code.
+    # Result: req_to_forms maps requirement_id → [list of form codes].
+    from cases.models import FormRequirement, CategoryForm as CatFormModel
+    linked_form_ids = set(
+        CatFormModel.objects
+        .filter(category=category)
+        .values_list('form_id', flat=True)
+    )
+    req_to_forms = {}  # {requirement_id: [form_code, ...]}
+    if linked_form_ids:
+        for fr in (
+            FormRequirement.objects
+            .filter(
+                form_id__in=linked_form_ids,
+                requirement_id__in=own_cat_reqs.values_list('requirement_id', flat=True),
+            )
+            .select_related('form')
+        ):
+            req_to_forms.setdefault(fr.requirement_id, []).append(fr.form.code)
+
     own_reqs = []
     for cr in own_cat_reqs:
         req = cr.requirement
@@ -1573,6 +1875,11 @@ def ajax_get_category_detail(request, category_id):
             'section_name':     req.section.name if req.section else 'Uncategorized',
             'cr_id':            cr.id,        # CategoryRequirement id for remove/reorder calls
             'cr_order':         cr.order,
+            # form_codes: list of government form codes (e.g. ['IMM5710']) that include
+            # this requirement AND are linked to this category.
+            # WHY: the JS uses this to group requirements under form section headers.
+            # Empty list means the requirement is not from any linked government form.
+            'form_codes':       req_to_forms.get(req.id, []),
         })
 
     # ── Inherited — walk up parent chain ──────────────────────────────
@@ -1666,9 +1973,14 @@ def ajax_create_requirement(request):
     req_type        = body.get('type', '').strip()
     description     = body.get('description', '').strip()
     is_required     = body.get('is_required', True)
-    section_id      = body.get('section_id')
-    category_id     = body.get('category_id')
-    profile_mapping = body.get('profile_mapping', '').strip()
+    section_id               = body.get('section_id')
+    category_id              = body.get('category_id')
+    profile_mapping          = body.get('profile_mapping', '').strip()
+    # WHY managed_profile_mapping: this is the Phase 3 "interior person" auto-fill.
+    # It auto-fills from the managed profile's own record (e.g. the applicant the case
+    # is FOR), not from the account holder who filed the case. Having it in +Create New
+    # lets the admin set it once without needing a separate Edit round-trip.
+    managed_profile_mapping  = body.get('managed_profile_mapping', '').strip()
 
     # Phase 4: eligibility gate fields — sent when admin checks "⚑ Mark as Eligibility Gate"
     # in the Create New tab. Defaults to False/empty so existing callers without these
@@ -1719,7 +2031,8 @@ def ajax_create_requirement(request):
         description     = description,
         is_required     = bool(is_required),
         section         = section,
-        profile_mapping = profile_mapping or None,
+        profile_mapping          = profile_mapping         or None,
+        managed_profile_mapping  = managed_profile_mapping or None,
         # Phase 4: eligibility gate — store None (not '') so DB NULLs are clean
         is_eligibility           = is_eligibility,
         eligibility_operator     = eligibility_operator     or None,
@@ -1753,8 +2066,9 @@ def ajax_create_requirement(request):
             'description':     req.description or '',
             'is_required':     req.is_required,
             'is_active':       req.is_active,
-            'profile_mapping': req.profile_mapping or '',
-            'section_name':    req.section.name if req.section else 'Uncategorized',
+            'profile_mapping':         req.profile_mapping or '',
+            'managed_profile_mapping': req.managed_profile_mapping or '',
+            'section_name':            req.section.name if req.section else 'Uncategorized',
         },
         'cr_id': cr_id,     # CategoryRequirement id if linked to a category; null otherwise
     })
@@ -2673,12 +2987,15 @@ def ajax_get_form_detail(request, form_id):
 
     return JsonResponse({
         'form': {
-            'id':          form.id,
-            'code':        form.code,
-            'name':        form.name,
-            'description': form.description or '',
-            'source_url':  form.source_url or '',
-            'is_active':   form.is_active,
+            'id':           form.id,
+            'code':         form.code,
+            'name':         form.name,
+            'description':  form.description or '',
+            'source_url':   form.source_url or '',
+            'is_active':    form.is_active,
+            # WHY: front-end shows a "Download PDF" link when pdf_file_url is set.
+            # The .url property gives the MEDIA_URL-prefixed path for direct download.
+            'pdf_file_url': form.pdf_file.url if form.pdf_file else '',
         },
         'form_requirements':   reqs_data,
         'used_in_categories':  cat_data,
@@ -3093,9 +3410,8 @@ def ajax_upload_form_pdf(request, form_id):
         })
 
     # Verify the form exists and is active before processing the upload.
-    # WHY no variable assignment: we only need the 404-or-continue effect here;
-    # the form object itself is not needed since we're just parsing the PDF bytes.
-    get_object_or_404(GovernmentForm, id=form_id, is_active=True)
+    # WHY assign to govt_form: we need the object to save the PDF file onto the model.
+    govt_form = get_object_or_404(GovernmentForm, id=form_id, is_active=True)
 
     pdf_file = request.FILES.get('pdf_file')
     if not pdf_file:
@@ -3110,19 +3426,42 @@ def ajax_upload_form_pdf(request, form_id):
         return JsonResponse({'ok': False, 'error': 'PDF too large (max 20 MB).'})
 
     pdf_bytes = pdf_file.read()
-    fields    = extract_pdf_fields(pdf_bytes)
+
+    # ── Save the PDF to the model BEFORE parsing ──────────────────────────────
+    # WHY before parsing: the file is stored permanently even if field extraction
+    # fails (e.g. XFA format). The admin can then download the saved PDF later
+    # without re-uploading it. GovernmentForm.pdf_file is a FileField.
+    from django.core.files.base import ContentFile  # ContentFile wraps raw bytes as a Django file
+    govt_form.pdf_file.save(pdf_file.name, ContentFile(pdf_bytes), save=True)
+    # save=True → calls govt_form.save() automatically so the path is persisted to DB.
+
+    fields = extract_pdf_fields(pdf_bytes)
 
     if not fields:
+        # WHY two distinct messages:
+        #   Many IRCC IMM PDFs use XFA (XML Forms Architecture) — a proprietary
+        #   Adobe format. pypdf cannot read XFA; PyMuPDF (fitz) has partial
+        #   XFA support but still extracts no fields for the newest IRCC forms.
+        #   In that case the admin needs to know to try PyMuPDF or to manually
+        #   enter the fields.  If pypdf is in use, the XFA path is most likely.
+        if _pdf_lib == 'pypdf':
+            detail = (
+                'pypdf could not extract fields. IRCC IMM forms often use XFA '
+                '(XML-based forms) which pypdf does not support. '
+                'Try installing PyMuPDF for better coverage: '
+                'venvcts/Scripts/pip install pymupdf — then restart the server.'
+            )
+        else:
+            detail = (
+                f'Library in use: {_pdf_lib}. '
+                'The PDF may be a scanned (non-interactive) document, '
+                'or the form uses a format neither library supports. '
+                'Make sure you downloaded the original fillable PDF from IRCC.'
+            )
         return JsonResponse({
             'ok':      True,
             'fields':  [],
-            'message': (
-                'No fillable fields found. '
-                'The PDF may not be an AcroForm (interactive) PDF. '
-                'IMM forms are usually fillable — make sure you downloaded the PDF '
-                'directly from IRCC (not a printed scan). '
-                f'Library in use: {_pdf_lib}.'
-            ),
+            'message': f'No fillable fields found. {detail}',
         })
 
     return JsonResponse({
@@ -3412,6 +3751,21 @@ def task_create(request):
     admin_users   = User.objects.filter(is_active=True, is_staff=True).order_by('email')
     all_cases     = Case.objects.filter(is_active=True).order_by('-created_at')[:50]
 
+    # ── GET prefill from case_detail "Create Task" button ─────────────────
+    # WHY GET params: case_detail links here with ?case_id=N&user_id=N so the
+    # form is pre-filled without the admin having to search for the case/user.
+    # On POST errors, 'post' dict re-fills the form instead of these prefills.
+    prefill_case_id = request.GET.get('case_id') or None
+    prefill_user_id = request.GET.get('user_id') or None
+
+    # Resolve the prefill objects so the template can display names/emails.
+    prefill_case = None
+    prefill_user = None
+    if prefill_case_id:
+        prefill_case = Case.objects.filter(id=prefill_case_id, is_active=True).first()
+    if prefill_user_id:
+        prefill_user = User.objects.filter(id=prefill_user_id, is_active=True).first()
+
     return render(request, 'admin_panel/task_create.html', {
         'errors':         errors,
         'regular_users':  regular_users,
@@ -3419,6 +3773,8 @@ def task_create(request):
         'all_cases':      all_cases,
         'type_choices':   Task.TYPE_CHOICES,
         'post':           request.POST,  # re-fill form on error
+        'prefill_case':   prefill_case,
+        'prefill_user':   prefill_user,
     })
 
 
@@ -3541,14 +3897,22 @@ def invoice_create(request):
             errors['amount'] = 'Enter a valid amount (e.g. 150.00).'
             amount_decimal = None
 
+        # ── Resolve related_case from hidden input (pre-filled by case_detail) ──
+        # WHY: when the admin clicks "+ Create Invoice" on a case_detail page,
+        # the link includes ?case_id=N which the template puts in a hidden input.
+        # We look up the Case object so we can set the FK on the Invoice.
+        case_id      = request.POST.get('linked_case') or None
+        related_case = Case.objects.filter(id=case_id, is_active=True).first() if case_id else None
+
         if not errors and user and amount_decimal:
             invoice = Invoice.objects.create(
-                user        = user,
-                title       = title,
-                description = description,
-                amount      = amount_decimal,
-                due_date    = due_date,
-                created_by  = request.user,
+                user         = user,
+                title        = title,
+                description  = description,
+                amount       = amount_decimal,
+                due_date     = due_date,
+                created_by   = request.user,
+                related_case = related_case,  # links invoice back to the case it was created from
             )
 
             # Notify user of new invoice
@@ -3565,10 +3929,19 @@ def invoice_create(request):
 
     users = User.objects.filter(is_active=True, is_staff=False).order_by('email')
 
+    # ── GET prefill from case_detail "Create Invoice" button ──────────────
+    # WHY: case_detail links here with ?case_id=N&user_email=x@y.com so the
+    # form is pre-filled. The template uses prefill_user_email to populate the
+    # email input, and prefill_case_id to populate a hidden linked_case input.
+    prefill_case_id    = request.GET.get('case_id') or None
+    prefill_user_email = request.GET.get('user_email') or ''
+
     return render(request, 'admin_panel/invoice_create.html', {
-        'errors': errors,
-        'users':  users,
-        'post':   request.POST,
+        'errors':             errors,
+        'users':              users,
+        'post':               request.POST,
+        'prefill_case_id':    prefill_case_id,
+        'prefill_user_email': prefill_user_email,
     })
 
 

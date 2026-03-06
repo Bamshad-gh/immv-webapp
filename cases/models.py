@@ -201,6 +201,14 @@ class GovernmentForm(models.Model):
     )
     is_active  = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    pdf_file   = models.FileField(
+        upload_to='government_forms/',
+        blank=True,
+        null=True,
+        # WHY: Stores the uploaded fillable PDF so it can be downloaded later.
+        # The file is saved on upload even if field extraction fails (e.g. XFA format).
+        # EXPAND: add a pdf_uploaded_at DateTimeField to track when it was uploaded.
+    )
 
     def __str__(self):
         return f'{self.code} — {self.name}'
@@ -379,6 +387,19 @@ class Requirement(models.Model):
         # answer_value is 'yes' or 'no' string (stored in answer_text for boolean type)
         elif op == 'yes':  return str(answer_value).lower() == 'yes'
         elif op == 'no':   return str(answer_value).lower() == 'no'
+
+        # ── Numeric comparisons ───────────────────────────────────
+        # Useful for age gates (age ≥ 18), years of experience (≥ 2), etc.
+        # answer_value can be a number, Decimal, or a string — we convert both sides.
+        elif op in ('gte', 'lte'):
+            try:
+                from decimal import Decimal
+                a = Decimal(str(answer_value))
+                b = Decimal(str(threshold))
+                if op == 'gte': return a >= b
+                if op == 'lte': return a <= b
+            except Exception:
+                return True  # misconfigured — don't block
 
         # ── String comparisons ────────────────────────────────────
         elif op == 'equals':     return str(answer_value).lower() == threshold.lower()
